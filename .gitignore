@@ -1,0 +1,50 @@
+# Compiler files
+cache/
+out/
+
+# Commonly ignored directories
+.logs/
+.ignore/
+
+# Ignores development broadcast logs.
+# The Sepolia run records ARE kept: they are the provenance of the deployed
+# addresses. Local-chain runs, dry runs and forge's transient recovery lock
+# are not.
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+/broadcast/**/*.recovery.lock
+
+# Docs. `forge doc` generates a mdbook into docs/src and docs/book.toml;
+# that is build output. The hand-written specifications under docs/specs
+# and the deployment notes under docs/deployment are source and are tracked.
+docs/src/
+docs/book.toml
+
+# Terraform. State is the important one: it records resource attributes in
+# clear text, including values marked sensitive in the configuration.
+# .terraform/ is provider binaries -- hundreds of megabytes per module.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# Lock files SHOULD be committed: they pin provider versions across machines.
+!.terraform.lock.hcl
+
+# Database backups. pg_dump output contains production data verbatim and
+# must never be committed. The scripts that produce it are tracked; the
+# dumps are not.
+backups/
+
+# Dotenv file
+.env
+.env.*
+# The templates carry placeholders only and are committed. Every other
+# .env.* — including .env.prod, which holds the production secrets — stays
+# ignored by the rule above.
+!.env.example
+!.env.prod.example
+
+# Arkiv publisher dry-run output (npm run arkiv:publish)
+arkiv-plan*.json
