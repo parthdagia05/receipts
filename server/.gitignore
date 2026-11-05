@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+
+# Local SQLite databases (and WAL/shm sidecars).
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets. `.env.example` is the committed template.
+.env
+.env.*
+!.env.example
