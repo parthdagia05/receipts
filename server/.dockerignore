@@ -1,0 +1,30 @@
+# Anything not needed to build or run the server.
+# Keeping the context small matters most for `node_modules`: copying a local
+# one in would ship the wrong platform's native binaries.
+
+node_modules
+dist
+coverage
+
+# Secrets. These must never enter a build context, let alone an image.
+.env
+.env.*
+!.env.example
+
+# Local database files.
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Tests and tooling: not needed at runtime, and `npm ci` in the build stage
+# installs what the compile needs.
+test
+vitest.config.ts
+.prettierrc.json
+.prettierignore
+
+.git
+.gitignore
+Dockerfile
+.dockerignore
