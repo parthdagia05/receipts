@@ -169,3 +169,116 @@ contract ReceiptSettler {
         return keccak256(abi.encode(agentId, orderId, block.chainid, address(this)));
     }
 
+    /// @notice Validate a payment's parameters before any token interaction.
+    /// @dev View-only preflight: performs the cheap reverts in order and resolves
+    ///      the agent wallet, but does NOT consume the authorization, move tokens,
+    ///      write a receipt, or emit an event. settle() uses the returned nonce
+    ///      and wallet after this passes.
+    /// @param payer The address that signed and will pay.
+    /// @param agentId The agent being paid.
+    /// @param orderId The caller-supplied order identifier used to derive the nonce.
+    /// @param amount The USDC amount to be paid.
+    /// @param signedNonce The nonce carried in the signed authorization.
+    /// @return nonce The validated nonce (equals the computed nonce / receipt ID).
+    /// @return agentWallet The agent's nonzero payment wallet.
+    function _validate(address payer, uint256 agentId, bytes32 orderId, uint256 amount, bytes32 signedNonce)
+        internal
+        view
+        returns (bytes32 nonce, address agentWallet)
+    {
+        require(payer != address(0), "payer is zero");
+        require(amount >= minPayment, "amount below minimum");
+
+        nonce = _computeNonce(agentId, orderId);
+        require(signedNonce == nonce, "nonce mismatch");
+
+        agentWallet = identityRegistry.getAgentWallet(agentId);
+        require(agentWallet != address(0), "agent wallet unset");
+        require(agentWallet != address(this), "agent wallet is settler");
+
+        require(receipts[nonce].payer == address(0), "receipt exists");
+    }
+
+    /// @notice Settle a signed USDC payment to an agent and record its receipt.
+    /// @dev The caller may be a relayer; `payer` is the EIP-3009 signer. Flow:
+    ///      validate, record the receipt, pull funds via receiveWithAuthorization
+    ///      (to == this settler, as USDC requires), forward the exact amount to
+    ///      the agent wallet, then emit. The receipt is written before the token
+    ///      calls; if either call reverts the whole transaction reverts, so no
+    ///      receipt persists and no funds move — the flow is atomic.
+    /// @param payer The address that signed the USDC authorization.
+    /// @param agentId The agent being paid.
+    /// @param orderId The caller-supplied order identifier; the (agentId, orderId)
+    ///        pair must be unique across payers using this settler.
+    /// @param amount The USDC amount to pay (>= minPayment).
+    /// @param validAfter EIP-3009 validity window start.
+    /// @param validBefore EIP-3009 validity window end.
+    /// @param signedNonce The nonce carried in the signed authorization.
+    /// @param signature The payer's EOA or EIP-1271 signature.
+    /// @return receiptId The receipt ID (equals the authorization nonce).
+    function settle(
+        address payer,
+        uint256 agentId,
+        bytes32 orderId,
+        uint256 amount,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 signedNonce,
+        bytes calldata signature
+    ) external nonReentrant returns (bytes32 receiptId) {
+        // 1-2. Validate inputs; obtain the validated nonce and agent wallet.
+        (bytes32 nonce, address agentWallet) = _validate(payer, agentId, orderId, amount, signedNonce);
+        receiptId = nonce;
+
+        // 3. Record the receipt before any external token interaction. A later
+        //    revert rolls this back, so a persisted receipt always implies a
+        //    completed payment.
+        receipts[receiptId] = Receipt({
+            payer: payer,
+            agentId: agentId,
+            amount: amount,
+            settledAt: uint64(block.timestamp),
+            spent: false,
+            orderId: orderId
+        });
+
+        // 4. Pull funds from the payer into this settler. USDC requires
+        //    `to == msg.sender`, so `to` is address(this). The receipt ID is the
+        //    authorization nonce.
+        usdc.receiveWithAuthorization(payer, address(this), amount, validAfter, validBefore, receiptId, signature);
+
+        // 5-6. Forward the exact amount to the agent wallet; revert if the token
+        //      reports failure (some ERC-20s return false instead of reverting).
+        bool ok = usdc.transfer(agentWallet, amount);
+        require(ok, "usdc transfer failed");
+
+        // 7-8. Record the settlement and return the receipt ID.
+        emit ReceiptSettled(receiptId, payer, agentId, amount, agentWallet);
+        return receiptId;
+    }
+
+    /// @notice Consume a receipt on behalf of the ReviewGateway, marking it spent.
+    /// @dev Gateway-only, single source of truth for receipt consumption. Verifies
+    ///      existence, unused status, and the expected payer/agent, then sets
+    ///      spent = true before returning. Makes no external calls. Amount and
+    ///      review-window checks are intentionally left to the gateway, which reads
+    ///      them from the returned receipt.
+    /// @param receiptId The receipt to consume.
+    /// @param expectedPayer The payer the gateway expects (the attested reviewer).
+    /// @param expectedAgentId The agent the gateway expects.
+    /// @return r The consumed receipt, with spent == true.
+    function consume(bytes32 receiptId, address expectedPayer, uint256 expectedAgentId)
+        external
+        onlyGateway
+        returns (Receipt memory r)
+    {
+        Receipt storage rp = receipts[receiptId];
+        require(rp.payer != address(0), "unknown receipt");
+        require(!rp.spent, "receipt spent");
+        require(rp.payer == expectedPayer, "payer mismatch");
+        require(rp.agentId == expectedAgentId, "agent mismatch");
+
+        rp.spent = true;
+        return rp;
+    }
+}
