@@ -1,0 +1,7 @@
+node_modules/
+dist/
+
+# Secrets and local overrides. `.env.example` is the committed template.
+.env
+.env.*
+!.env.example
