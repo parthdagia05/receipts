@@ -271,3 +271,152 @@ contract ReviewGateway {
         _verifyAttestation(att);
         require(!identityRegistry.isAuthorizedOrOwner(att.reviewer, att.agentId), "reviewer is owner/operator");
 
+        _consumeNullifier(att.agentId, att.nullifier);
+
+        _writeFreeFeedback(att.agentId, att.value, att.valueDecimals, att.feedbackURI, att.feedbackHash);
+
+        emit ReviewSubmitted(att.agentId, att.reviewer, att.nullifier, att.reviewType, att.receiptId, att.feedbackHash);
+    }
+
+    /// @dev Write one free (human-verified) feedback entry to ERC-8004. Isolated in
+    ///      its own frame to keep the many-argument external call off the caller's
+    ///      stack. tag1 = "quality", tag2 = "human-verified", endpoint = "".
+    function _writeFreeFeedback(
+        uint256 agentId,
+        int128 value,
+        uint8 valueDecimals,
+        string calldata feedbackURI,
+        bytes32 feedbackHash
+    ) internal {
+        reputationRegistry.giveFeedback(
+            agentId, value, valueDecimals, "quality", "human-verified", "", feedbackURI, feedbackHash
+        );
+    }
+
+    /// @notice Submit a paid, receipt-verified review.
+    /// @dev Like submitFreeReview but additionally consumes a ReceiptSettler
+    ///      receipt bound to (reviewer, agent) and enforces the minimum payment
+    ///      and 30-day review window. The attested `att.reviewer` is the reviewer
+    ///      identity, so relayers may submit. Order: range-check, verify attestation,
+    ///      owner/operator check, consume the receipt, check amount and window,
+    ///      consume the nullifier, then write feedback. Receipt consumption and the
+    ///      nullifier mark precede the registry write, so any later revert rolls both
+    ///      back — the receipt stays unspent and the nullifier unused.
+    /// @param att The Record Server attestation (carries the signed rating,
+    ///        evidence hash, evidence URI, review type and the receiptId to consume).
+    function submitPaidReview(Attestation calldata att) external nonReentrant {
+        require(att.reviewType == _REVIEW_PAID, "not a paid review");
+        require(att.receiptId != bytes32(0), "paid: receiptId required");
+        require(att.value >= 0 && att.value <= 100, "value out of range");
+        require(att.valueDecimals == 0, "decimals must be 0");
+
+        _verifyAttestation(att);
+        require(!identityRegistry.isAuthorizedOrOwner(att.reviewer, att.agentId), "reviewer is owner/operator");
+
+        IReceiptSettler.Receipt memory r = receiptSettler.consume(att.receiptId, att.reviewer, att.agentId);
+        require(r.amount >= minPayment, "payment below minimum");
+        require(block.timestamp <= uint256(r.settledAt) + REVIEW_WINDOW, "review window passed");
+
+        _consumeNullifier(att.agentId, att.nullifier);
+
+        _writePaidFeedback(att.agentId, att.value, att.valueDecimals, att.feedbackURI, att.feedbackHash);
+
+        emit ReviewSubmitted(att.agentId, att.reviewer, att.nullifier, att.reviewType, att.receiptId, att.feedbackHash);
+    }
+
+    /// @notice Submit a wallet-verified review.
+    ///
+    /// @dev The accessible fallback for reviewers without an Orb-issued World ID
+    ///      Proof of Human credential. It is a STRICTLY WEAKER claim and is
+    ///      recorded as such: ERC-8004 tag2 is "wallet-verified", never
+    ///      "human-verified". A wallet is not a person — one human can hold any
+    ///      number of them — so this path establishes that a specific address
+    ///      authorised a specific review, and nothing about uniqueness of the
+    ///      human behind it. Anything consuming these reviews must weight them
+    ///      accordingly; the reputation engine keeps them in a separate bucket.
+    ///
+    ///      Uniqueness is one review per WALLET per agent, enforced on-chain:
+    ///      the nullifier is recomputed here from the reviewer address, so the
+    ///      attestation cannot smuggle in a second nullifier for the same wallet.
+    ///      It shares the registry with World ID nullifiers, which is safe
+    ///      because of the domain separation in `walletNullifier`.
+    ///
+    ///      Order matches the other two paths: range-check, verify attestation,
+    ///      owner/operator check, consume the nullifier, then write feedback, so
+    ///      a later revert rolls the nullifier mark back.
+    /// @param att The Record Server attestation. `receiptId` must be zero and
+    ///        `nullifier` must equal `walletNullifier(att.reviewer)`.
+    function submitWalletReview(Attestation calldata att) external nonReentrant {
+        require(att.reviewType == _REVIEW_WALLET, "not a wallet review");
+        require(att.receiptId == bytes32(0), "wallet: receiptId must be zero");
+        require(att.value >= 0 && att.value <= 100, "value out of range");
+        require(att.valueDecimals == 0, "decimals must be 0");
+        require(att.nullifier == walletNullifier(att.reviewer), "wallet: bad nullifier");
+
+        _verifyAttestation(att);
+        require(!identityRegistry.isAuthorizedOrOwner(att.reviewer, att.agentId), "reviewer is owner/operator");
+
+        _consumeNullifier(att.agentId, att.nullifier);
+
+        _writeWalletFeedback(att.agentId, att.value, att.valueDecimals, att.feedbackURI, att.feedbackHash);
+
+        emit ReviewSubmitted(att.agentId, att.reviewer, att.nullifier, att.reviewType, att.receiptId, att.feedbackHash);
+    }
+
+    /// @dev Write one wallet-verified feedback entry to ERC-8004. Isolated in its
+    ///      own frame to keep the many-argument external call off the caller's
+    ///      stack. tag1 = "quality", tag2 = "wallet-verified", endpoint = "".
+    ///
+    ///      The tag is the whole point: it is the permanent, on-chain statement
+    ///      of what was actually proven. Reusing "human-verified" here would
+    ///      make every consumer of ERC-8004 feedback believe a wallet signature
+    ///      established personhood.
+    function _writeWalletFeedback(
+        uint256 agentId,
+        int128 value,
+        uint8 valueDecimals,
+        string calldata feedbackURI,
+        bytes32 feedbackHash
+    ) internal {
+        reputationRegistry.giveFeedback(
+            agentId, value, valueDecimals, "quality", "wallet-verified", "", feedbackURI, feedbackHash
+        );
+    }
+
+    /// @dev Write one paid (receipt-verified) feedback entry to ERC-8004. Isolated
+    ///      in its own frame to keep the many-argument external call off the
+    ///      caller's stack. tag1 = "quality", tag2 = "receipt-verified", endpoint = "".
+    function _writePaidFeedback(
+        uint256 agentId,
+        int128 value,
+        uint8 valueDecimals,
+        string calldata feedbackURI,
+        bytes32 feedbackHash
+    ) internal {
+        reputationRegistry.giveFeedback(
+            agentId, value, valueDecimals, "quality", "receipt-verified", "", feedbackURI, feedbackHash
+        );
+    }
+
+    /// @notice Strict ECDSA recovery: exact 65-byte length, low-`s`, canonical `v`,
+    ///         and a nonzero recovered address.
+    function _recoverStrict(bytes32 digest, bytes memory signature) internal pure returns (address) {
+        require(signature.length == 65, "bad signature length");
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(signature, 0x20))
+            s := mload(add(signature, 0x40))
+            v := byte(0, mload(add(signature, 0x60)))
+        }
+
+        require(uint256(s) <= _LOW_S_MAX, "invalid signature s");
+        require(v == 27 || v == 28, "invalid signature v");
+
+        address signer = ecrecover(digest, v, r, s);
+        require(signer != address(0), "invalid signer");
+        return signer;
+    }
+}
