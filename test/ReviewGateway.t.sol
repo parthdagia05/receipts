@@ -552,3 +552,307 @@ contract ReviewGatewayAttestationTest is Test {
         assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier not consumed");
     }
 
+    function test_Free_Expired_Rejected() public {
+        vm.warp(1_000_000);
+        ReviewGateway.Attestation memory a =
+            _build(AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp - 1), FREE_VALUE, 0, FREE_HASH, 0, bytes32(0));
+        vm.expectRevert("attestation expired");
+        gw.submitFreeReview(a);
+    }
+
+    function test_Free_DuplicateNullifierSameAgent_Rejected() public {
+        gw.submitFreeReview(_freeAtt(AGENT_ID, NULLIFIER, reviewer));
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("nullifier used");
+        gw.submitFreeReview(a);
+        assertEq(rep.callCount(), 1, "only first feedback");
+    }
+
+    function test_Free_SameNullifierDifferentAgent_Accepted() public {
+        gw.submitFreeReview(_freeAtt(AGENT_ID, NULLIFIER, reviewer));
+        gw.submitFreeReview(_freeAtt(AGENT_ID + 1, NULLIFIER, reviewer));
+        assertEq(rep.callCount(), 2, "two feedback calls");
+    }
+
+    function test_Free_OwnerSelfReview_Rejected() public {
+        id.setOwner(AGENT_ID, reviewer);
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("reviewer is owner/operator");
+        gw.submitFreeReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier not consumed");
+    }
+
+    function test_Free_OperatorSelfReview_Rejected() public {
+        id.setAuthorized(reviewer, AGENT_ID, true);
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("reviewer is owner/operator");
+        gw.submitFreeReview(a);
+    }
+
+    function test_Free_RatingOutOfRange_Rejected() public {
+        ReviewGateway.Attestation memory aLow = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), int128(-1), 0, FREE_HASH, 0, bytes32(0)
+        );
+        vm.expectRevert("value out of range");
+        gw.submitFreeReview(aLow);
+
+        ReviewGateway.Attestation memory aHigh = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), int128(101), 0, FREE_HASH, 0, bytes32(0)
+        );
+        vm.expectRevert("value out of range");
+        gw.submitFreeReview(aHigh);
+    }
+
+    function test_Free_NonzeroDecimals_Rejected() public {
+        ReviewGateway.Attestation memory a = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), FREE_VALUE, 1, FREE_HASH, 0, bytes32(0)
+        );
+        vm.expectRevert("decimals must be 0");
+        gw.submitFreeReview(a);
+    }
+
+    function test_Free_RejectsPaidAttestation() public {
+        // reviewType 1 presented to the free path.
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("not a free review");
+        gw.submitFreeReview(a);
+    }
+
+    function test_Free_RejectsNonzeroReceiptId() public {
+        // reviewType 0 but a nonzero receiptId.
+        ReviewGateway.Attestation memory a = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), FREE_VALUE, 0, FREE_HASH, 0, RECEIPT_ID
+        );
+        vm.expectRevert("free: receiptId must be zero");
+        gw.submitFreeReview(a);
+    }
+
+    function test_Free_RegistryRevert_RollsBackNullifier() public {
+        rep.setRevert(true);
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("registry revert");
+        gw.submitFreeReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier rolled back");
+    }
+
+    function test_Free_RelayerSubmits_ForAttestedReviewer() public {
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.prank(relayer);
+        gw.submitFreeReview(a);
+        assertEq(rep.callCount(), 1, "feedback written");
+        assertTrue(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier consumed for attested reviewer");
+    }
+
+    function test_Free_InvalidAgent_HandledSafely() public {
+        id.setRevertAuth(AGENT_ID, true);
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("nonexistent agent");
+        gw.submitFreeReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier not consumed");
+        assertEq(rep.callCount(), 0, "no feedback");
+    }
+
+    // --- paid review submission ---
+
+    function _setReceiptNow(uint256 amount) internal {
+        settler.setReceipt(RECEIPT_ID, reviewer, AGENT_ID, amount, uint64(block.timestamp));
+    }
+
+    function test_Paid_Success_CallsRegistryWithCorrectArgs() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        gw.submitPaidReview(_paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID));
+
+        assertEq(rep.callCount(), 1, "one feedback call");
+        assertEq(rep.lastAgentId(), AGENT_ID, "agentId");
+        assertEq(rep.lastValue(), PAID_VALUE, "value");
+        assertEq(rep.lastValueDecimals(), 0, "decimals");
+        assertEq(rep.lastTag1(), "quality", "tag1");
+        assertEq(rep.lastTag2(), "receipt-verified", "tag2");
+        assertEq(rep.lastEndpoint(), "", "endpoint empty");
+        assertEq(rep.lastFeedbackURI(), "ipfs://paid", "feedbackURI");
+        assertEq(rep.lastFeedbackHash(), PAID_HASH, "feedbackHash from attestation");
+        assertTrue(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier consumed");
+        (,,,, bool spent,) = settler.receipts(RECEIPT_ID);
+        assertTrue(spent, "receipt consumed");
+    }
+
+    function test_Paid_PayerMismatch_Rejected() public {
+        vm.warp(365 days);
+        settler.setReceipt(RECEIPT_ID, makeAddr("otherPayer"), AGENT_ID, PAID_AMOUNT, uint64(block.timestamp));
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("payer mismatch");
+        gw.submitPaidReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier not consumed");
+    }
+
+    function test_Paid_AgentMismatch_Rejected() public {
+        vm.warp(365 days);
+        settler.setReceipt(RECEIPT_ID, reviewer, AGENT_ID + 1, PAID_AMOUNT, uint64(block.timestamp));
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("agent mismatch");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_UnknownReceipt_Rejected() public {
+        vm.warp(365 days);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, keccak256("nope"));
+        vm.expectRevert("unknown receipt");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_AlreadyConsumedReceipt_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        gw.submitPaidReview(_paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID));
+
+        ReviewGateway.Attestation memory a2 = _paidAtt(AGENT_ID, keccak256("nullifier-2"), reviewer, RECEIPT_ID);
+        vm.expectRevert("receipt spent");
+        gw.submitPaidReview(a2);
+    }
+
+    function test_Paid_PaymentBelowMinimum_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(MIN_PAYMENT - 1);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("payment below minimum");
+        gw.submitPaidReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier not consumed");
+        (,,,, bool spent,) = settler.receipts(RECEIPT_ID);
+        assertFalse(spent, "receipt consumption rolled back");
+    }
+
+    function test_Paid_ReceiptTooOld_Rejected() public {
+        vm.warp(365 days);
+        settler.setReceipt(RECEIPT_ID, reviewer, AGENT_ID, PAID_AMOUNT, uint64(block.timestamp - 31 days));
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("review window passed");
+        gw.submitPaidReview(a);
+        (,,,, bool spent,) = settler.receipts(RECEIPT_ID);
+        assertFalse(spent, "receipt consumption rolled back");
+    }
+
+    function test_Paid_ReceiptAtBoundary_Accepted() public {
+        vm.warp(365 days);
+        settler.setReceipt(RECEIPT_ID, reviewer, AGENT_ID, PAID_AMOUNT, uint64(block.timestamp - gw.REVIEW_WINDOW()));
+        gw.submitPaidReview(_paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID));
+        assertEq(rep.callCount(), 1, "accepted at boundary");
+    }
+
+    function test_Paid_SharedNullifierWithFree_Rejected() public {
+        vm.warp(365 days);
+        gw.submitFreeReview(_freeAtt(AGENT_ID, NULLIFIER, reviewer));
+
+        _setReceiptNow(PAID_AMOUNT);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("nullifier used");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_OwnerSelfReview_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        id.setOwner(AGENT_ID, reviewer);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("reviewer is owner/operator");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_InvalidAttestation_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        (, uint256 otherKey) = makeAddrAndKey("other");
+        _signWith(otherKey, a);
+        vm.expectRevert("bad attestation signer");
+        gw.submitPaidReview(a);
+        (,,,, bool spent,) = settler.receipts(RECEIPT_ID);
+        assertFalse(spent, "receipt not consumed");
+    }
+
+    function test_Paid_RejectsFreeAttestation() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        // reviewType 0 presented to the paid path.
+        ReviewGateway.Attestation memory a = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("not a paid review");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_RejectsZeroReceiptId() public {
+        // reviewType 1 but zero receiptId.
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, bytes32(0));
+        vm.expectRevert("paid: receiptId required");
+        gw.submitPaidReview(a);
+    }
+
+    function test_Paid_InvalidRatingAndDecimals_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+
+        ReviewGateway.Attestation memory a1 = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), int128(101), 0, PAID_HASH, 1, RECEIPT_ID
+        );
+        vm.expectRevert("value out of range");
+        gw.submitPaidReview(a1);
+
+        ReviewGateway.Attestation memory a2 = _build(
+            AGENT_ID, NULLIFIER, reviewer, uint64(block.timestamp + FUTURE), PAID_VALUE, 1, PAID_HASH, 1, RECEIPT_ID
+        );
+        vm.expectRevert("decimals must be 0");
+        gw.submitPaidReview(a2);
+    }
+
+    function test_Paid_RegistryRevert_RollsBackReceiptAndNullifier() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        rep.setRevert(true);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("registry revert");
+        gw.submitPaidReview(a);
+        assertFalse(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier rolled back");
+        (,,,, bool spent,) = settler.receipts(RECEIPT_ID);
+        assertFalse(spent, "receipt consumption rolled back");
+    }
+
+    function test_Paid_RelayerSubmits_ForAttestedReviewer() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        ReviewGateway.Attestation memory a = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.prank(relayer);
+        gw.submitPaidReview(a);
+        assertEq(rep.callCount(), 1, "feedback written");
+        assertTrue(gw.usedNullifier(AGENT_ID, NULLIFIER), "nullifier consumed for attested reviewer");
+    }
+
+    // --- cross-path replay protection ---
+
+    /// @dev A signature intended for the free path cannot be replayed through the
+    ///      paid path, and vice versa: reviewType is signed, so the mismatched
+    ///      path check reverts (and tampering reviewType breaks the signature).
+    function test_CrossPathReplay_FreeSigThroughPaid_Rejected() public {
+        vm.warp(365 days);
+        _setReceiptNow(PAID_AMOUNT);
+        ReviewGateway.Attestation memory freeAtt = _freeAtt(AGENT_ID, NULLIFIER, reviewer);
+        vm.expectRevert("not a paid review");
+        gw.submitPaidReview(freeAtt);
+
+        // Flipping reviewType to 1 to pass the path check breaks the signature.
+        freeAtt.reviewType = 1;
+        freeAtt.receiptId = RECEIPT_ID;
+        vm.expectRevert("bad attestation signer");
+        gw.submitPaidReview(freeAtt);
+    }
+
+    function test_CrossPathReplay_PaidSigThroughFree_Rejected() public {
+        ReviewGateway.Attestation memory paidAtt = _paidAtt(AGENT_ID, NULLIFIER, reviewer, RECEIPT_ID);
+        vm.expectRevert("not a free review");
+        gw.submitFreeReview(paidAtt);
+
+        // Flipping reviewType to 0 and clearing receiptId breaks the signature.
+        paidAtt.reviewType = 0;
+        paidAtt.receiptId = bytes32(0);
+        vm.expectRevert("bad attestation signer");
+        gw.submitFreeReview(paidAtt);
+    }
+}
