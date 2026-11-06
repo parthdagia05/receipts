@@ -167,3 +167,97 @@ export function reputationSimulateRoute(): Hono {
     );
   });
 
+  app.post('/api/reputation/simulate', async (c) => {
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: 'invalid_json' }, 400);
+    }
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return c.json({ error: 'invalid_request' }, 400);
+    }
+
+    const reviews = parseReviews((body as Record<string, unknown>)['reviews']);
+    if (reviews === null) {
+      return c.json(
+        { error: 'invalid_reviews', message: `expected 1..${MAX_SIMULATED_REVIEWS} reviews` },
+        400,
+      );
+    }
+
+    // Each simulated review gets its own synthetic nullifier, so the engine
+    // sees distinct humans. Real nullifiers come from World ID and never
+    // appear here.
+    //
+    // A simulated wallet review gets a synthetic reviewer address and the real
+    // wallet-nullifier derivation of it, exactly as the gateway would record.
+    const inputs: ReviewInput[] = reviews.map((review, index) => {
+      const reviewer = `0x${(index + 1).toString(16).padStart(40, '0')}` as const;
+      return {
+        nullifier:
+          review.reviewType === REVIEW_TYPE_WALLET
+            ? walletNullifier(reviewer)
+            : `0xsimulated${index.toString(16).padStart(8, '0')}`,
+        reviewer,
+        value: BigInt(review.value),
+        valueDecimals: 0,
+        reviewType: review.reviewType,
+        ...(review.paymentAmount === undefined
+          ? {}
+          : { paymentAmount: BigInt(review.paymentAmount) }),
+        revoked: review.revoked ?? false,
+        feedbackIndex: BigInt(index + 1),
+        blockNumber: BigInt(index + 1),
+        logIndex: 0,
+      };
+    });
+
+    const result = computeReputation(inputs);
+    // The same reviews with every wallet review removed. If wallet reviews
+    // could manipulate the human score these would differ; they never do.
+    const withoutWallet = computeReputation(
+      inputs.filter((input) => input.reviewType !== REVIEW_TYPE_WALLET),
+    );
+
+    // The unweighted mean, for comparison. This is what ERC-8004's own
+    // getSummary computes and what AttackLab shows being dragged from 50
+    // to 77 by six fresh addresses.
+    const eligibleValues = result.eligible.map((entry) => Number(entry.value));
+    const mean =
+      eligibleValues.length === 0
+        ? null
+        : Math.floor(eligibleValues.reduce((sum, v) => sum + v, 0) / eligibleValues.length);
+
+    return c.json(
+      {
+        simulated: true,
+        status: result.status,
+        score: result.score === null ? null : Number(result.score),
+        unweighted_mean: mean,
+        threshold: result.threshold,
+        distinct_humans: result.distinctHumans,
+        human_verified: result.humanVerifiedCount,
+        receipt_verified: result.receiptVerifiedCount,
+        total_weight: result.totalWeight.toString(10),
+        eligible: result.eligible.map((entry) => ({
+          value: Number(entry.value),
+          reviewType: entry.reviewType,
+          weight: entry.weight.toString(10),
+        })),
+        excluded: result.excluded.map((entry) => ({ reason: entry.reason })),
+        tiers: serializeTiers(result.tiers),
+        wallet_effect: {
+          wallet_reviews: result.tiers.wallet.count,
+          human_score_with_wallet: result.score === null ? null : Number(result.score),
+          human_score_without_wallet:
+            withoutWallet.score === null ? null : Number(withoutWallet.score),
+          unchanged: result.score === withoutWallet.score,
+        },
+      },
+      200,
+    );
+  });
+
+  return app;
+}
