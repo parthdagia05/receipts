@@ -71,3 +71,42 @@ export function createSqliteRepository(db: Db): Repository {
       return findReviewAuthorization(db, nonce);
     },
 
+    async consumeReviewAuthorization(params) {
+      return consumeReviewAuthorization(db, params);
+    },
+
+    async isVerificationAuthorized(verificationNonce) {
+      return isVerificationAuthorized(db, verificationNonce);
+    },
+
+    async createWalletReviewAuthorization(nonce: Hex, params, createdAt) {
+      createWalletReviewAuthorization(db, nonce, params, createdAt);
+    },
+
+    async findWalletReviewAuthorization(nonce) {
+      return findWalletReviewAuthorization(db, nonce);
+    },
+
+    async consumeWalletReviewAuthorization(params) {
+      return consumeWalletReviewAuthorization(db, params);
+    },
+
+    async isWalletReviewed(agentId, reviewer) {
+      return isWalletReviewed(db, agentId, reviewer);
+    },
+
+    async putReviewContent(params) {
+      putReviewContent(db, params);
+    },
+
+    async findReviewContent(feedbackHash) {
+      return findReviewContent(db, feedbackHash);
+    },
+
+    async close() {
+      // `better-sqlite3` throws if closed twice; the server's shutdown path
+      // already closes the handle it owns, so this is intentionally a no-op.
+      // Ownership of the handle stays with whoever opened it.
+    },
+  };
+}
