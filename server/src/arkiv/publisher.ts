@@ -6,6 +6,7 @@ import {
   reviewId,
   snapshotFingerprint,
 } from './records.js';
+import type { Provenance } from './provenance.js';
 import type { ConfirmedReview, SnapshotInput } from './records.js';
 import type { ReputationSchema, ReviewSchema } from './schemas.js';
 
@@ -76,6 +77,8 @@ export interface PlanInput {
   readonly reviews: readonly ConfirmedReview[];
   /** Content for a feedbackHash, or null when unavailable. */
   readonly contentFor: (feedbackHash: Hex) => Promise<Uint8Array | null>;
+  /** Which World ID environment verified a review; see `provenance.ts`. */
+  readonly provenanceFor: (review: ConfirmedReview) => Promise<Provenance>;
   readonly snapshots: readonly SnapshotInput[];
   readonly published: PublishedState;
   /** Current Rabdi block, to judge how much life an entity has left. */
@@ -108,7 +111,12 @@ export async function planPublication(input: PlanInput): Promise<PublicationPlan
       creates.push({
         kind: 'review',
         id,
-        values: reviewEntityValues(review, input.chainId, content),
+        values: reviewEntityValues(
+          review,
+          input.chainId,
+          content,
+          await input.provenanceFor(review),
+        ),
       });
     } catch (err) {
       refused.push(err instanceof Error ? err.message : `review ${id}: refused`);

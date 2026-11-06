@@ -10,7 +10,7 @@ Receipts publishes two kinds of entity to Arkiv's Rabdi testnet (chain `7794095`
 | Who can extend it | anyone (`permissionlessExtension`) | the publisher only |
 | Expires | max lifetime (7,884,000 blocks, about 182 days), renewed by the publisher when under 30 days remain | 7 days, renewed while the standing is unchanged, otherwise superseded |
 
-**Publisher wallet:** `<ARKIV_PUBLISHER_ADDRESS — pending first publication>`. It is a dedicated key. The CLI refuses to run if it equals the gateway's `recordServerSigner`, the key that signs review attestations.
+**Publisher wallet:** [`0x98A4e58bB26ced2656e260DDb62C915465ce4b3e`](https://rabdi.explorer.arkiv.network/address/0x98A4e58bB26ced2656e260DDb62C915465ce4b3e). It is a dedicated key, used for nothing else. The CLI refuses to run if it equals the gateway's `recordServerSigner`, the key that signs review attestations.
 
 Arkiv lets anyone create entities under any schema tag. **Every query must filter on `$creator`** equal to the publisher address. The web app and every query below do.
 
@@ -34,6 +34,8 @@ Arkiv lets anyone create entities under any schema tag. **Every query must filte
 | `blockNumber` | `u64` | yes | Sepolia block |
 | `content` | `bytes` | no | the review text; included only if it hashes to `feedbackHash` |
 | `contentType` | `str` | no | `text/plain; charset=utf-8` |
+| `worldIdEnvironment` | `str` | yes | `production`, `staging` (World ID Simulator test), `none` (wallet review) or `unknown`. See below |
+| `worldIdRpId` | `str` | no | World ID RP the proof went through, when known. Public: every IDKit request shows it |
 
 The fields filtered on are `agentId`, `reviewType`, `value`, `reviewer`, `txHash`, `feedbackHash` and `$creator`. Sorting uses `blockNumber`.
 
@@ -56,8 +58,22 @@ The fields filtered on are `agentId`, `reviewType`, `value`, `reviewer`, `txHash
 | `snapshotBlock` | `u64` | yes | Sepolia block the score was computed at |
 | `manifestHash` | `str` | yes | keccak256 of the canonical evidence manifest; equals the API's `evidence_hash` for the same block |
 | `reviewGateway` | `addr` | no | gateway scored |
+| `productionVerifiedCount` | `i32` | no | the agent's human-labelled reviews verified with production World ID |
+| `stagingVerifiedCount` | `i32` | no | the same, verified with staging World ID (Simulator tests) |
+| `unknownProvenanceCount` | `i32` | no | the same, with no provenance on record |
 
 The fields filtered on are `agentId`, `status`, `score`, `distinctHumans` and `$creator`. Sorting uses `snapshotBlock`.
+
+## World ID provenance
+
+Sepolia does not record which World ID environment verified a review. A `human-verified` tag only says the Record Server signed it, and the Record Server also signs for staging World ID, which only accepts the World ID Simulator. So the publisher adds this from Receipts' own records:
+
+- For each review it looks up the World ID request the review's authorization used, and reads only that request's RP id. Databases are opened read-only. Nullifiers, signatures and nonces are never selected.
+- The RP id is mapped to an environment with `ARKIV_RP_ENVIRONMENTS`. Production RP `rp_d3afb91156ea1942`, staging RP `rp_c357f900d4501523`.
+- No record, two sources that disagree, or an RP not in the map all give `unknown`. Nothing is guessed.
+- Wallet-verified reviews are `none`.
+
+This is the publisher's statement, not something a reader can check on-chain. A snapshot whose counts include staging reviews is a test score, and the app labels it that way.
 
 ## What is not on Arkiv
 

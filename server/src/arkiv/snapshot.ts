@@ -23,7 +23,10 @@ export interface SnapshotDeps {
  * the API's `evidence_hash` for the same snapshot block. Only the summary and
  * the hash leave this function; the manifest, which lists nullifiers, does not.
  */
-export async function computeSnapshot(deps: SnapshotDeps, agentId: bigint): Promise<SnapshotInput> {
+export async function computeSnapshot(
+  deps: SnapshotDeps,
+  agentId: bigint,
+): Promise<Omit<SnapshotInput, 'provenance'>> {
   const retrieved = await retrieveReviews(
     {
       client: deps.client,

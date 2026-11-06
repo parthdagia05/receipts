@@ -61,6 +61,9 @@ export async function readPublishedState(
         walletCount: true,
         totalWeight: true,
         unattributableCount: true,
+        productionVerifiedCount: true,
+        stagingVerifiedCount: true,
+        unknownProvenanceCount: true,
       })
       .from(ReputationSchema)
       .createdBy(publisher)
@@ -86,6 +89,9 @@ export async function readPublishedState(
           walletCount: row.walletCount.value,
           totalWeight: row.totalWeight.value,
           unattributableCount: row.unattributableCount.value,
+          productionVerifiedCount: row.productionVerifiedCount.value,
+          stagingVerifiedCount: row.stagingVerifiedCount.value,
+          unknownProvenanceCount: row.unknownProvenanceCount.value,
         }),
       });
     }

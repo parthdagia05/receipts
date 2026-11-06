@@ -105,3 +105,47 @@ export function fromPlanFile(file: PlanFile): PublicationPlan {
     refused: [],
   };
 }
+
+/** Raised when a plan file may not be executed as given. Nothing has been sent. */
+export class PlanApprovalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PlanApprovalError';
+  }
+}
+
+/**
+ * Check that `file` is the plan that was approved, for this signer and chain.
+ * Runs before anything is signed; every failure means nothing was sent.
+ */
+export function checkApprovedPlan(
+  file: PlanFile,
+  approval: { confirm: string; signer: Address; arkivChainId: number },
+): void {
+  const hash = planFileHash(file);
+  if (hash !== approval.confirm) {
+    throw new PlanApprovalError(
+      `the plan hashes to ${hash}, not the confirmed ${approval.confirm}; nothing sent`,
+    );
+  }
+  if (file.publisher.toLowerCase() !== approval.signer.toLowerCase()) {
+    throw new PlanApprovalError(
+      'the plan was made for a different publisher than ARKIV_PUBLISHER_PRIVATE_KEY',
+    );
+  }
+  if (file.arkivChainId !== approval.arkivChainId) {
+    throw new PlanApprovalError('the plan was made for a different Arkiv chain');
+  }
+}
+
+/**
+ * The publisher must never be the attestation signer: a leaked Arkiv key must
+ * not also be able to forge "human-verified" reviews.
+ */
+export function assertSeparateFromSigner(recordServerSigner: Address, publisher: Address): void {
+  if (recordServerSigner.toLowerCase() === publisher.toLowerCase()) {
+    throw new PlanApprovalError(
+      'the Arkiv publisher is the gateway recordServerSigner; use a separate key',
+    );
+  }
+}

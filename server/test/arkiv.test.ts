@@ -5,8 +5,16 @@ import { custom, keccak256, toBytes } from 'viem';
 import type { Address, Hex, PublicClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { indexConfirmedReviews } from '../src/arkiv/indexer.js';
-import { fromPlanFile, planFileHash, toPlanFile } from '../src/arkiv/planFile.js';
-import { planPublication, RABDI_BLOCK_SECONDS } from '../src/arkiv/publisher.js';
+import type { Provenance } from '../src/arkiv/provenance.js';
+import {
+  assertSeparateFromSigner,
+  checkApprovedPlan,
+  fromPlanFile,
+  PlanApprovalError,
+  planFileHash,
+  toPlanFile,
+} from '../src/arkiv/planFile.js';
+import { CREATE_POLICY, planPublication, RABDI_BLOCK_SECONDS } from '../src/arkiv/publisher.js';
 import type { PublishedState } from '../src/arkiv/publisher.js';
 import {
   reputationEntityValues,
@@ -68,8 +76,12 @@ function snapshot(result = computeReputation([])): SnapshotInput {
     reviewGateway: GATEWAY,
     result,
     unattributableCount: 0,
+    provenance: { production: 0, staging: 1, unknown: 0 },
   };
 }
+
+const STAGING_RP = 'rp_c357f900d4501523';
+const STAGING: Provenance = { environment: 'staging', rpId: STAGING_RP };
 
 const EMPTY: PublishedState = { reviews: new Map(), latestSnapshots: new Map() };
 const DAY_BLOCKS = 86_400n / RABDI_BLOCK_SECONDS;
@@ -79,10 +91,30 @@ const DAY_BLOCKS = 86_400n / RABDI_BLOCK_SECONDS;
 describe('arkiv: nothing private is published', () => {
   const FORBIDDEN = /nullifier|signature|proof|nonce|world|secret|private/i;
 
+  // The two World ID provenance columns are the only exception, by name, and
+  // the tests below pin what they may hold: one of four labels and a public
+  // RP id. Any other column matching FORBIDDEN still fails.
+  const PUBLIC_WORLD_ID_COLUMNS = new Set(['worldIdEnvironment', 'worldIdRpId']);
+
   it('no column of either schema is named after private data', () => {
     for (const schema of [ReviewSchema, ReputationSchema]) {
-      for (const name of Object.keys(schema.columns)) expect(name).not.toMatch(FORBIDDEN);
+      for (const name of Object.keys(schema.columns)) {
+        if (PUBLIC_WORLD_ID_COLUMNS.has(name) && schema === ReviewSchema) continue;
+        expect(name).not.toMatch(FORBIDDEN);
+      }
     }
+    expect(Object.keys(ReviewSchema.columns)).toEqual(
+      expect.arrayContaining([...PUBLIC_WORLD_ID_COLUMNS]),
+    );
+  });
+
+  it('the World ID columns hold only an environment label and a public RP id', async () => {
+    const values = reviewEntityValues(review(), 1, null, STAGING);
+    expect(values.worldIdEnvironment).toBe('staging');
+    expect(values.worldIdRpId).toMatch(/^rp_[0-9a-f]{16}$/);
+    const unknown = reviewEntityValues(review(), 1, null, { environment: 'unknown' });
+    expect(unknown.worldIdEnvironment).toBe('unknown');
+    expect(unknown).not.toHaveProperty('worldIdRpId');
   });
 
   it('the indexer drops the nullifier, so no plan can contain it', async () => {
@@ -104,6 +136,7 @@ describe('arkiv: nothing private is published', () => {
       chainId: 11155111,
       reviews,
       contentFor: async () => CONTENT,
+      provenanceFor: async () => STAGING,
       snapshots: [snapshot()],
       published: EMPTY,
       arkivBlock: 1n,
@@ -128,23 +161,26 @@ describe('arkiv: review records', () => {
     expect(verifiedContent(review(), toBytes('something else'))).toBeNull();
     expect(verifiedContent(review(), null)).toBeNull();
 
-    const tampered = reviewEntityValues(review(), 11155111, toBytes('swapped text'));
+    const tampered = reviewEntityValues(review(), 11155111, toBytes('swapped text'), STAGING);
     expect(tampered.content).toBeUndefined();
   });
 
   it('omits receiptId for an unpaid review and keeps it for a paid one', () => {
-    expect(reviewEntityValues(review(), 1, null).receiptId).toBeUndefined();
+    expect(reviewEntityValues(review(), 1, null, STAGING).receiptId).toBeUndefined();
     const paid = reviewEntityValues(
       review({ reviewType: 1, tag: 'receipt-verified', receiptId: `0x${'0F'.repeat(32)}` }),
       1,
       null,
+      STAGING,
     );
     expect(paid.receiptId).toBe(`0x${'0f'.repeat(32)}`);
   });
 
   it('refuses a review whose tag contradicts its type, or whose value is out of range', () => {
-    expect(() => reviewEntityValues(review({ tag: 'receipt-verified' }), 1, null)).toThrow(/tag/);
-    expect(() => reviewEntityValues(review({ value: 101n }), 1, null)).toThrow(/range/);
+    expect(() => reviewEntityValues(review({ tag: 'receipt-verified' }), 1, null, STAGING)).toThrow(
+      /tag/,
+    );
+    expect(() => reviewEntityValues(review({ value: 101n }), 1, null, STAGING)).toThrow(/range/);
   });
 
   it('identifies a review by transaction and log index', () => {
@@ -202,6 +238,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [r],
       contentFor: async () => CONTENT,
+      provenanceFor: async () => STAGING,
       snapshots: [],
       published,
       arkivBlock: 1n,
@@ -217,6 +254,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [r],
       contentFor: async () => CONTENT,
+      provenanceFor: async () => STAGING,
       snapshots: [],
       published: {
         reviews: new Map([
@@ -245,6 +283,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [],
       contentFor: async () => null,
+      provenanceFor: async () => STAGING,
       snapshots: [s],
       published: latest(1_000n + 7n * DAY_BLOCKS),
       arkivBlock: 1_000n,
@@ -256,6 +295,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [],
       contentFor: async () => null,
+      provenanceFor: async () => STAGING,
       snapshots: [s],
       published: latest(1_000n + 2n * DAY_BLOCKS),
       arkivBlock: 1_000n,
@@ -266,6 +306,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [],
       contentFor: async () => null,
+      provenanceFor: async () => STAGING,
       snapshots: [s],
       published: latest(1_000n + 7n * DAY_BLOCKS, 'something-else'),
       arkivBlock: 1_000n,
@@ -276,6 +317,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [],
       contentFor: async () => null,
+      provenanceFor: async () => STAGING,
       snapshots: [s],
       published: latest(999n),
       arkivBlock: 1_000n,
@@ -288,6 +330,7 @@ describe('arkiv: planning', () => {
       chainId: 1,
       reviews: [review({ tag: 'wallet-verified' }), review({ txHash: txHash(2) })],
       contentFor: async () => CONTENT,
+      provenanceFor: async () => STAGING,
       snapshots: [],
       published: EMPTY,
       arkivBlock: 1n,
@@ -311,6 +354,7 @@ describe('arkiv: the approved plan is the executed plan', () => {
         }),
       ],
       contentFor: async () => CONTENT,
+      provenanceFor: async () => STAGING,
       snapshots: [snapshot(computeReputation(fiveHumans()))],
       published: EMPTY,
       arkivBlock: 1n,
@@ -378,6 +422,72 @@ describe('arkiv: the approved plan is the executed plan', () => {
     });
     await expect(executePlan(wallet, broken as never)).rejects.not.toThrow(/network/);
     expect(seen).toEqual([]);
+  });
+
+  it('executes only the confirmed file, for its own publisher and chain', async () => {
+    const file = toPlanFile(await samplePlan(), REVIEWER, 7794095);
+    const approval = { confirm: planFileHash(file), signer: REVIEWER, arkivChainId: 7794095 };
+    expect(() => checkApprovedPlan(file, approval)).not.toThrow();
+    // Checksum casing of the signer is not a different publisher.
+    expect(() =>
+      checkApprovedPlan(file, { ...approval, signer: REVIEWER.toUpperCase() as Address }),
+    ).not.toThrow();
+
+    const edited = JSON.parse(JSON.stringify(file));
+    edited.creates[0].values.value = 100;
+    expect(() => checkApprovedPlan(edited, approval)).toThrow(PlanApprovalError);
+    expect(() =>
+      checkApprovedPlan(file, { ...approval, signer: `0x${'22'.repeat(20)}` as Address }),
+    ).toThrow(/different publisher/);
+    expect(() => checkApprovedPlan(file, { ...approval, arkivChainId: 1 })).toThrow(
+      /different Arkiv chain/,
+    );
+  });
+
+  it('refuses a publisher that is the attestation signer, whatever its casing', () => {
+    const signer = '0x203d0f8C67C66ebbbe1fe34A1E9f86aDc67da363' as Address;
+    expect(() => assertSeparateFromSigner(signer, signer.toLowerCase() as Address)).toThrow(
+      /recordServerSigner/,
+    );
+    expect(() => assertSeparateFromSigner(signer, REVIEWER)).not.toThrow();
+  });
+
+  it('creates reviews for the maximum lifetime and snapshots for seven days, both readonly', async () => {
+    const plan = fromPlanFile(
+      JSON.parse(JSON.stringify(toPlanFile(await samplePlan(), REVIEWER, 7794095))),
+    );
+    const sent: { creates: { schema: unknown; expiration: unknown; flags: unknown }[] }[] = [];
+    const wallet = {
+      async executeBatch(batch: (typeof sent)[number]) {
+        sent.push(batch);
+        return {
+          txHash: txHash(99),
+          createdEntities: batch.creates.map((_, i) => txHash(100 + i)),
+        };
+      },
+    };
+    const [result] = await executePlan(wallet as never, plan);
+    const creates = sent[0]?.creates ?? [];
+    expect(creates.map((c) => c.schema)).toEqual([ReviewSchema, ReviewSchema, ReputationSchema]);
+    // 7,884,000 and 302,400 blocks at two seconds: about 182 days, and 7 days.
+    expect(creates.map((c) => c.expiration)).toEqual([
+      { minLifetime: 7_884_000n, expiresAt: 0n },
+      { minLifetime: 7_884_000n, expiresAt: 0n },
+      { minLifetime: 7n * DAY_BLOCKS, expiresAt: 0n },
+    ]);
+    expect(creates.map((c) => c.flags)).toEqual([
+      CREATE_POLICY.review.flags,
+      CREATE_POLICY.review.flags,
+      CREATE_POLICY.reputation.flags,
+    ]);
+    expect(CREATE_POLICY.review.flags.readonly && CREATE_POLICY.reputation.flags.readonly).toBe(
+      true,
+    );
+    expect(result?.created.map((c) => c.entityKey)).toEqual([
+      txHash(100),
+      txHash(101),
+      txHash(102),
+    ]);
   });
 
   it('batches creates then extensions, at most ten per transaction', () => {

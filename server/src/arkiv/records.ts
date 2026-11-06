@@ -4,6 +4,7 @@ import { bytesToHex, keccak256 } from 'viem';
 import type { Address, Hex } from 'viem';
 import type { ReputationResult } from '../reputation/engine.js';
 import { TAG2_FREE, TAG2_PAID, TAG2_WALLET } from '../reputation/spec.js';
+import type { Provenance } from './provenance.js';
 import type { ReputationSchema, ReviewSchema } from './schemas.js';
 
 /**
@@ -69,6 +70,7 @@ export function reviewEntityValues(
   review: ConfirmedReview,
   chainId: number,
   content: Uint8Array | null,
+  provenance: Provenance,
 ): CreateEntityValues<typeof ReviewSchema> {
   if (TAG_FOR_TYPE[review.reviewType] !== review.tag) {
     throw new ArkivRecordError(`tx ${review.txHash}: tag does not match reviewType`);
@@ -96,6 +98,8 @@ export function reviewEntityValues(
     logIndex: review.logIndex,
     blockNumber: u64(review.blockNumber),
     ...(checked === null ? {} : { content: checked }),
+    worldIdEnvironment: provenance.environment,
+    ...(provenance.rpId === undefined ? {} : { worldIdRpId: provenance.rpId }),
   };
 }
 
@@ -114,6 +118,14 @@ export interface SnapshotInput {
   readonly reviewGateway: Address;
   readonly result: ReputationResult;
   readonly unattributableCount: number;
+  readonly provenance: ProvenanceCounts;
+}
+
+/** How an agent's human-labelled reviews were verified; see the schema. */
+export interface ProvenanceCounts {
+  readonly production: number;
+  readonly staging: number;
+  readonly unknown: number;
 }
 
 /**
@@ -146,6 +158,9 @@ export function reputationEntityValues(
     snapshotBlock: u64(input.snapshotBlock),
     manifestHash: input.manifestHash.toLowerCase(),
     reviewGateway: addr(input.reviewGateway),
+    productionVerifiedCount: input.provenance.production,
+    stagingVerifiedCount: input.provenance.staging,
+    unknownProvenanceCount: input.provenance.unknown,
   };
 }
 
@@ -168,6 +183,9 @@ export function snapshotFingerprint(values: {
   readonly totalWeight: string;
   readonly unattributableCount: number;
   readonly spec: string;
+  readonly productionVerifiedCount: number;
+  readonly stagingVerifiedCount: number;
+  readonly unknownProvenanceCount: number;
 }): string {
   return [
     values.spec,
@@ -180,6 +198,9 @@ export function snapshotFingerprint(values: {
     values.walletCount,
     values.totalWeight,
     values.unattributableCount,
+    values.productionVerifiedCount,
+    values.stagingVerifiedCount,
+    values.unknownProvenanceCount,
   ].join('|');
 }
 

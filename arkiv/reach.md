@@ -19,14 +19,14 @@ Yes, without installing anything:
 - **The command line:** the README's [Arkiv section](../README.md#arkiv) has a curl query that runs against the public Rabdi RPC with no key.
 - **In code:** `@arkiv-network/sdk` with the schemas in [`web/src/lib/arkiv.ts`](../web/src/lib/arkiv.ts). That file is self-contained and can be copied into another app.
 
-Numbers so far: `<pending first publication — entities written, agents covered, reviews mirrored>`.
+Numbers so far: 4 entities written in 1 transaction, covering 2 agents (11292 and 11294): 2 reviews mirrored with their text, and 2 reputation snapshots. Both reviews are Simulator tests (staging World ID), not real people, and both agents are below the five-human threshold. Details and links: the README's [Arkiv section](../README.md#arkiv).
 
 ## Will you keep building it after Mumbai?
 
 `<team to answer>`. The honest state of Receipts today:
 - It is a hackathon prototype.
 - The contracts are deployed on Sepolia, and the reputation API is live.
-- **No review has been written on-chain yet.**
+- Two reviews have been written on-chain through the gateway, both test runs verified with the World ID Simulator (staging), not real credentials. Agents 11292 and 11294.
 - Live World ID verification has not been tested end to end (see the README status table).
 
 The Arkiv part is built to keep running unattended: one idempotent command, safe to put on a schedule.

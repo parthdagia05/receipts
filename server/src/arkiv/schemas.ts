@@ -67,6 +67,15 @@ export const ReviewSchema = defineSchema(REVIEW_SCHEMA_NAME, {
    *  obtain bytes that hash to `feedbackHash`. */
   content: bytes().optional(),
   contentType: str().default('text/plain; charset=utf-8'),
+  /** Which World ID environment verified the review, from Receipts' own
+   *  records (see `provenance.ts`): `production`, `staging` (the Simulator,
+   *  so a test, never a real credential), `none` for a wallet-verified
+   *  review, or `unknown`. Not recorded on Sepolia, so this is the
+   *  publisher's statement rather than something checkable on-chain. */
+  worldIdEnvironment: str().indexed(),
+  /** The World ID RP the verification went through, when known. Public: it
+   *  appears in every IDKit request the browser makes. */
+  worldIdRpId: str().optional(),
 });
 
 /**
@@ -104,4 +113,11 @@ export const ReputationSchema = defineSchema(REPUTATION_SCHEMA_NAME, {
    *  block; recompute it to check this snapshot against the chain. */
   manifestHash: str().indexed(),
   reviewGateway: addr(),
+  /** Of this agent's confirmed human-labelled reviews: how many were verified
+   *  with production World ID, with staging World ID (Simulator tests), and
+   *  how many have no provenance on record. A score resting on staging or
+   *  unknown reviews is a test score, and readers should say so. */
+  productionVerifiedCount: i32(),
+  stagingVerifiedCount: i32(),
+  unknownProvenanceCount: i32(),
 });

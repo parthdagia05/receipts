@@ -99,7 +99,28 @@ Receipts publishes its public record to [Arkiv](https://arkiv.network) (Rabdi te
 - **Reader:** the "Public record on Arkiv" panel on each agent page queries Rabdi straight from the browser ([`web/src/components/ArkivRecord.tsx`](web/src/components/ArkivRecord.tsx)).
 - More: [arkiv/how-you-use-arkiv.md](arkiv/how-you-use-arkiv.md), [arkiv/why-arkiv.md](arkiv/why-arkiv.md), feedback for the team: [arkiv/friction.md](arkiv/friction.md).
 
-The first publication is waiting on a funded publisher key. The module, tests, CLI and reader were all built during the event.
+**Published on Rabdi (7 Nov 2026).** Rabdi is Arkiv's testnet. The reviews themselves live on Ethereum Sepolia.
+
+- **Transaction:** [`0x1d265ea2…fc64`](https://rabdi.explorer.arkiv.network/tx/0x1d265ea22b66b40d9261ecf6e9a55e02f2266d022e2c62b9d911af5f7791fc64) on Rabdi block 309,831. One transaction, 4 entities. Gas used 1,951,960, cost 0.00195 tGLM.
+- **Publisher:** [`0x98A4e58bB26ced2656e260DDb62C915465ce4b3e`](https://rabdi.explorer.arkiv.network/address/0x98A4e58bB26ced2656e260DDb62C915465ce4b3e), owner and creator of all four. A dedicated key, separate from the attestation signer. Balance after publishing: 0.048 tGLM.
+- **Hash check:** both review entities store their text. keccak256 of the stored bytes equals the `feedbackHash` in the review's Sepolia event, checked after publishing and again in the browser on every page load.
+- **Test data, not real people.** Both reviews were verified with **staging World ID, which only accepts the World ID Simulator**. They are not production or Orb verifications. Each review entity records `worldIdEnvironment = staging` and RP `rp_c357f900d4501523`, and the app labels them **Staging World ID · Simulator test**.
+- **Below threshold.** Each agent has 1 verified human of the 5 needed, so neither snapshot carries a score.
+
+| Entity | Agent | Key | What it holds | Expires |
+|---|---|---|---|---|
+| `receipts.review/v1` | 11294 | [`0x3c526a6e…e66d`](https://rabdi.explorer.arkiv.network/entity/0x3c526a6e261f77bb1e217577e6b57cd302da1bf5bc14da0436ec36b6130ce66d) | rating 100, 46-byte text, Sepolia tx [`0xcd30…7e83`](https://sepolia.etherscan.io/tx/0xcd301a8f037b21be67e050f4292da43fb24da418200b99e6a5a05c33e5b67e83) | about 182 days (block 8,193,831) |
+| `receipts.review/v1` | 11292 | [`0xf8a079e6…35a5`](https://rabdi.explorer.arkiv.network/entity/0xf8a079e6cf1716d20105f6a5468fb22b44aef0ac0f0e9258c90d05965add35a5) | rating 47, 56-byte text, Sepolia tx [`0x7f2e…cc9a`](https://sepolia.etherscan.io/tx/0x7f2e732549d0fc8a4cf2f70fcb2a404395c1c48cde8f3f3a0c8c91bfd6b2cc9a) | about 182 days (block 8,193,831) |
+| `receipts.reputation/v1` | 11292 | [`0xee0e7125…6343`](https://rabdi.explorer.arkiv.network/entity/0xee0e7125f63ebe47a70c6492459558f82c0b1e88b3073cbb248b9c00247a6343) | `below_threshold`, 1 of 5 humans, 0 production / 1 staging / 0 unknown | 7 days (block 612,231) |
+| `receipts.reputation/v1` | 11294 | [`0x3a813d5c…bfa3`](https://rabdi.explorer.arkiv.network/entity/0x3a813d5c778b5f52ca32db496600228f9b777b8a12c5e38a7dedec6ee6d7bfa3) | `below_threshold`, 1 of 5 humans, 0 production / 1 staging / 0 unknown | 7 days (block 612,231) |
+
+Read it yourself with no key (agent 11292's reviews; swap the schema for `receipts.reputation/v1` to get its snapshot):
+
+```sh
+curl -s https://rpc.rabdi.db-chain.testnet.arkiv.network -H 'content-type: application/json' -d '{"jsonrpc":"2.0","id":1,"method":"arkiv_query","params":["arkiv.schema = str('\''receipts.review/v1'\'') AND agentId = str('\''11292'\'') AND $creator = addr(0x98A4e58bB26ced2656e260DDb62C915465ce4b3e)",{"select":{"key":true,"owner":true,"expiresAt":true,"attributes":true},"limit":"0x32"}]}'
+```
+
+The module, tests, CLI and reader were all built during the event.
 
 ## Run it yourself
 

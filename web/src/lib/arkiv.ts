@@ -37,6 +37,8 @@ export const ReviewSchema = defineSchema('receipts.review/v1', {
   blockNumber: u64().indexed(),
   content: bytes().optional(),
   contentType: str().default('text/plain; charset=utf-8'),
+  worldIdEnvironment: str().indexed(),
+  worldIdRpId: str().optional(),
 });
 
 export const ReputationSchema = defineSchema('receipts.reputation/v1', {
@@ -57,6 +59,9 @@ export const ReputationSchema = defineSchema('receipts.reputation/v1', {
   snapshotBlock: u64().indexed(),
   manifestHash: str().indexed(),
   reviewGateway: addr(),
+  productionVerifiedCount: i32(),
+  stagingVerifiedCount: i32(),
+  unknownProvenanceCount: i32(),
 });
 
 export const ARKIV_RPC_URL = 'https://rpc.rabdi.db-chain.testnet.arkiv.network';
@@ -85,19 +90,43 @@ const client = createPublicClient({
   transport: http(),
 });
 
+/**
+ * What the entity's `content` says about the on-chain `feedbackHash`:
+ * `verified` when the bytes hash to it, `mismatch` when they do not, and
+ * `absent` when the publisher could not obtain matching bytes and left the
+ * column out.
+ */
+export type ContentStatus = 'verified' | 'mismatch' | 'absent';
+
+/**
+ * Which World ID environment verified a review, as the publisher recorded
+ * it. `staging` means the World ID Simulator: a test, never a real
+ * credential. Anything the publisher did not write as one of the four known
+ * labels is read as `unknown`.
+ */
+export type WorldIdEnvironment = 'production' | 'staging' | 'none' | 'unknown';
+
+export function readEnvironment(raw: string | undefined): WorldIdEnvironment {
+  return raw === 'production' || raw === 'staging' || raw === 'none' ? raw : 'unknown';
+}
+
 export interface ArkivReview {
   readonly entityKey: Hex;
   readonly expiresAt: bigint;
+  readonly gateway: Address;
   readonly reviewType: number;
   readonly tag: string;
   readonly value: number;
   readonly reviewer: Address;
+  readonly feedbackIndex: bigint;
   readonly txHash: Hex;
+  readonly blockNumber: bigint;
   readonly feedbackHash: Hex;
   /** The review text, when the entity carries it. */
   readonly text: string | null;
-  /** True only when the carried text hashes to the on-chain feedbackHash. */
-  readonly contentVerified: boolean;
+  readonly contentStatus: ContentStatus;
+  readonly worldIdEnvironment: WorldIdEnvironment;
+  readonly worldIdRpId: string | null;
 }
 
 export interface ArkivSnapshot {
@@ -111,6 +140,26 @@ export interface ArkivSnapshot {
   readonly receiptVerifiedCount: number;
   readonly snapshotBlock: bigint;
   readonly manifestHash: Hex;
+  readonly productionVerifiedCount: number;
+  readonly stagingVerifiedCount: number;
+  readonly unknownProvenanceCount: number;
+}
+
+/**
+ * Whether a snapshot's score rests on anything other than production World
+ * ID. `test` when any counted review was a staging (Simulator) verification,
+ * `unverified` when only unknown provenance is mixed in, `production` when
+ * every human-labelled review was production-verified.
+ */
+export function snapshotStanding(
+  s: Pick<
+    ArkivSnapshot,
+    'productionVerifiedCount' | 'stagingVerifiedCount' | 'unknownProvenanceCount'
+  >,
+): 'production' | 'test' | 'unverified' {
+  if (s.stagingVerifiedCount > 0) return 'test';
+  if (s.unknownProvenanceCount > 0) return 'unverified';
+  return 'production';
 }
 
 export interface ArkivRecord {
@@ -128,13 +177,18 @@ function reviewQuery(agentId: string, publisher: Address) {
     .select({
       $key: true,
       $expiresAt: true,
+      gateway: true,
       reviewType: true,
       tag: true,
       value: true,
       reviewer: true,
+      feedbackIndex: true,
       txHash: true,
+      blockNumber: true,
       feedbackHash: true,
       content: true,
+      worldIdEnvironment: true,
+      worldIdRpId: true,
     })
     .from(ReviewSchema)
     .where(eq('agentId', agentId))
@@ -156,6 +210,9 @@ function snapshotQuery(agentId: string, publisher: Address) {
       receiptVerifiedCount: true,
       snapshotBlock: true,
       manifestHash: true,
+      productionVerifiedCount: true,
+      stagingVerifiedCount: true,
+      unknownProvenanceCount: true,
     })
     .from(ReputationSchema)
     .where(eq('agentId', agentId))
@@ -172,18 +229,22 @@ export async function loadArkivRecord(agentId: string, publisher: Address): Prom
   const reviews = reviewPage.entities.map((row): ArkivReview => {
     const feedbackHash = row.feedbackHash.value as Hex;
     const content = row.content === undefined ? null : hexToBytes(row.content.value);
-    const contentVerified = content !== null && keccak256(content) === feedbackHash.toLowerCase();
     return {
       entityKey: row.$key,
       expiresAt: row.$expiresAt,
+      gateway: getAddress(row.gateway.value),
       reviewType: row.reviewType.value,
       tag: row.tag.value,
       value: row.value.value,
       reviewer: getAddress(row.reviewer.value),
+      feedbackIndex: row.feedbackIndex.value,
       txHash: row.txHash.value as Hex,
+      blockNumber: row.blockNumber.value,
       feedbackHash,
       text: content === null ? null : new TextDecoder().decode(content),
-      contentVerified,
+      contentStatus: contentStatus(content, feedbackHash),
+      worldIdEnvironment: readEnvironment(row.worldIdEnvironment.value),
+      worldIdRpId: row.worldIdRpId?.value ?? null,
     };
   });
 
@@ -202,6 +263,9 @@ export async function loadArkivRecord(agentId: string, publisher: Address): Prom
           receiptVerifiedCount: s.receiptVerifiedCount.value,
           snapshotBlock: s.snapshotBlock.value,
           manifestHash: s.manifestHash.value as Hex,
+          productionVerifiedCount: s.productionVerifiedCount.value,
+          stagingVerifiedCount: s.stagingVerifiedCount.value,
+          unknownProvenanceCount: s.unknownProvenanceCount.value,
         };
 
   return {
@@ -215,6 +279,55 @@ export async function loadArkivRecord(agentId: string, publisher: Address): Prom
     snapshotQuery: snapshotQ.toString(),
   };
 }
+
+/** Checks entity content against the on-chain hash; see {@link ContentStatus}. */
+export function contentStatus(content: Uint8Array | null, feedbackHash: Hex): ContentStatus {
+  if (content === null) return 'absent';
+  return keccak256(content) === feedbackHash.toLowerCase() ? 'verified' : 'mismatch';
+}
+
+/** The Sepolia fields an Arkiv review is checked against. */
+export interface ChainReview {
+  readonly transactionHash: Hex;
+  readonly reviewer: Address;
+  readonly reviewType: number;
+  readonly feedbackHash: Hex;
+  readonly blockNumber: bigint;
+}
+
+/**
+ * `matches` when the Sepolia review in the same transaction agrees on
+ * reviewer, type, feedbackHash and block; `differs` when it does not;
+ * `unlisted` when the page's Sepolia list does not include that transaction
+ * (it is capped, so absence is not evidence of anything).
+ */
+export type ChainComparison = 'matches' | 'differs' | 'unlisted';
+
+export function compareWithChain(
+  review: ArkivReview,
+  chain: readonly ChainReview[],
+): ChainComparison {
+  const tx = review.txHash.toLowerCase();
+  const onChain = chain.find((r) => r.transactionHash.toLowerCase() === tx);
+  if (onChain === undefined) return 'unlisted';
+  return getAddress(onChain.reviewer) === review.reviewer &&
+    onChain.reviewType === review.reviewType &&
+    onChain.feedbackHash.toLowerCase() === review.feedbackHash.toLowerCase() &&
+    onChain.blockNumber === review.blockNumber
+    ? 'matches'
+    : 'differs';
+}
+
+/** Sepolia reviews with no Arkiv entity yet: confirmed too recently, or not published. */
+export function unpublishedCount(
+  arkiv: readonly ArkivReview[],
+  chain: readonly ChainReview[],
+): number {
+  const published = new Set(arkiv.map((r) => r.txHash.toLowerCase()));
+  return chain.filter((r) => !published.has(r.transactionHash.toLowerCase())).length;
+}
+
+export const isExpired = (expiresAt: bigint, atBlock: bigint): boolean => expiresAt <= atBlock;
 
 /** A curl command that runs `query` against the public Arkiv RPC, no key needed. */
 export function curlFor(query: string): string {

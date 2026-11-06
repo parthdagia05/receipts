@@ -13,9 +13,23 @@ import { normalizeReviewContentBaseUrl } from '../signing/feedbackUri.js';
 import { indexConfirmedReviews } from './indexer.js';
 import { CREATE_POLICY, planPublication } from './publisher.js';
 import type { PublicationPlan } from './publisher.js';
-import { fromPlanFile, planFileHash, toPlanFile } from './planFile.js';
+import {
+  assertSeparateFromSigner,
+  checkApprovedPlan,
+  fromPlanFile,
+  PlanApprovalError,
+  planFileHash,
+  toPlanFile,
+} from './planFile.js';
 import type { PlanFile } from './planFile.js';
-import { describeValues } from './records.js';
+import {
+  countProvenance,
+  openProvenanceDatabases,
+  parseRpEnvironments,
+  resolveProvenance,
+} from './provenance.js';
+import type { Provenance } from './provenance.js';
+import { describeValues, reviewId } from './records.js';
 import { REPUTATION_SCHEMA_NAME, REVIEW_SCHEMA_NAME } from './schemas.js';
 import { estimatePlan, executePlan, readPublishedState } from './sdk.js';
 import { computeSnapshot } from './snapshot.js';
@@ -46,6 +60,10 @@ import { computeSnapshot } from './snapshot.js';
  *   ARKIV_ACCESS_KEY             optional; empty uses the public endpoint
  *   ARKIV_CONFIRMATIONS          Sepolia blocks a review must be buried under (default 12)
  *   ARKIV_CONTENT_BASE_URL       where to fetch review text (default REVIEW_CONTENT_BASE_URL)
+ *   ARKIV_PROVENANCE_DATABASE_URLS  comma-separated Postgres URLs, opened read-only, to find
+ *                                which World ID RP verified each review; unset means every
+ *                                review is published as `unknown`. Never printed.
+ *   ARKIV_RP_ENVIRONMENTS        `rp_…:production,rp_…:staging`; an unlisted RP is `unknown`
  */
 
 const recordServerSignerAbi = [
@@ -159,9 +177,7 @@ async function refuseAttestationSigner(
     abi: recordServerSignerAbi,
     functionName: 'recordServerSigner',
   });
-  if (getAddress(signer) === publisher) {
-    throw new CliError('the Arkiv publisher is the gateway recordServerSigner; use a separate key');
-  }
+  assertSeparateFromSigner(getAddress(signer), publisher);
 }
 
 async function main(): Promise<void> {
@@ -220,6 +236,29 @@ async function main(): Promise<void> {
     confirmations: blockNumber('ARKIV_CONFIRMATIONS', 12n),
   });
 
+  // Provenance is resolved once per review, before planning, so the plan,
+  // the snapshot counts and the printed summary all agree.
+  const rpEnvironments = parseRpEnvironments(optional('ARKIV_RP_ENVIRONMENTS') ?? '');
+  const databases = openProvenanceDatabases(
+    (optional('ARKIV_PROVENANCE_DATABASE_URLS') ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s !== ''),
+  );
+  const provenance = new Map<string, Provenance>();
+  try {
+    for (const review of indexed.reviews) {
+      provenance.set(
+        reviewId(review),
+        await resolveProvenance(review, databases.lookups, rpEnvironments),
+      );
+    }
+  } finally {
+    await databases.close();
+  }
+  const provenanceOf = (review: (typeof indexed.reviews)[number]): Provenance =>
+    provenance.get(reviewId(review)) ?? { environment: 'unknown' };
+
   const agentIds = [...new Set([...indexed.reviews.map((r) => r.agentId), ...args.agents])].sort(
     (a, b) => (a < b ? -1 : a > b ? 1 : 0),
   );
@@ -237,7 +276,19 @@ async function main(): Promise<void> {
     confirmations: blockNumber('REPUTATION_CONFIRMATIONS', 2n),
   };
   const snapshots = [];
-  for (const id of agentIds) snapshots.push(await computeSnapshot(snapshotDeps, id));
+  for (const id of agentIds) {
+    const scored = await computeSnapshot(snapshotDeps, id);
+    snapshots.push({
+      ...scored,
+      // Over the reviews the indexer saw, which stops ARKIV_CONFIRMATIONS
+      // blocks back; a review newer than that is in neither count nor plan.
+      provenance: countProvenance(
+        indexed.reviews
+          .filter((r) => r.agentId === id && r.blockNumber <= scored.snapshotBlock)
+          .map(provenanceOf),
+      ),
+    });
+  }
 
   const [published, timing, balance] = await Promise.all([
     readPublishedState(arkiv, publisher),
@@ -249,6 +300,7 @@ async function main(): Promise<void> {
     chainId,
     reviews: indexed.reviews,
     contentFor: contentFetcher(contentBase),
+    provenanceFor: async (review) => provenanceOf(review),
     snapshots,
     published,
     arkivBlock: timing.currentBlock,
@@ -284,6 +336,11 @@ async function main(): Promise<void> {
                 note: 'tGLM is the Rabdi testnet token from the faucet; no real funds are spent',
               },
         sepoliaScannedTo: indexed.toBlock.toString(10),
+        provenance: {
+          sources: databases.lookups.length,
+          rpEnvironments: Object.fromEntries(rpEnvironments),
+          reviews: indexed.reviews.map((r) => ({ review: reviewId(r), ...provenanceOf(r) })),
+        },
         indexerSkipped: indexed.skipped,
         plan: renderPlan(plan),
         planFile: args.planPath,
@@ -314,19 +371,11 @@ async function execute(
   if (args.confirm === undefined) throw new CliError('--execute needs --confirm <planHash>');
 
   const file = JSON.parse(readFileSync(args.planPath, 'utf8')) as PlanFile;
-  const hash = planFileHash(file);
-  if (hash !== args.confirm) {
-    throw new CliError(
-      `${args.planPath} hashes to ${hash}, not the confirmed ${args.confirm}; nothing sent`,
-    );
-  }
-  if (getAddress(file.publisher) !== account.address) {
-    throw new CliError(
-      'the plan was made for a different publisher than ARKIV_PUBLISHER_PRIVATE_KEY',
-    );
-  }
-  if (file.arkivChainId !== chain.id)
-    throw new CliError('the plan was made for a different Arkiv chain');
+  checkApprovedPlan(file, {
+    confirm: args.confirm,
+    signer: account.address,
+    arkivChainId: chain.id,
+  });
   await refuseAttestationSigner(
     createPublicClient({ transport: http(required('RPC_URL')) }),
     address('REVIEW_GATEWAY_ADDRESS'),
@@ -363,7 +412,7 @@ main().catch((err: unknown) => {
   // The RPC URL can carry an API key, and viem puts it in `message`. Only
   // `shortMessage` and `details` are printed: both come from the node's
   // response, never from the request URL.
-  if (err instanceof CliError) {
+  if (err instanceof CliError || err instanceof PlanApprovalError) {
     console.error(`[arkiv] ${err.message}`);
   } else if (err instanceof Error) {
     const { shortMessage, details } = err as { shortMessage?: string; details?: string };

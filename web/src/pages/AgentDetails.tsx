@@ -284,7 +284,11 @@ export function AgentDetails() {
 
             <div className={styles.splitCol}>
               {reputation.data != null && <ReputationTiers reputation={reputation.data} />}
-              <ArkivRecord agentId={agentId.toString(10)} reputation={reputation.data ?? null} />
+              <ArkivRecord
+                agentId={agentId.toString(10)}
+                reputation={reputation.data ?? null}
+                chainReviews={reviews.data ?? null}
+              />
               <Card>
                 <CardHeader title="Identity" />
                 <DescriptionList>
