@@ -1,0 +1,15 @@
+[Unit]
+Description=Receipts backup failure notification
+Documentation=file:/opt/receipts/infrastructure/backup/README.md
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=-/opt/receipts/backup.env
+ExecStart=/opt/receipts/alert.sh "receipts-backup.service failed"
+
+# This unit exists so a failure is loud. If it cannot notify, that must not
+# be silent either -- but it must also not loop, so no Restart= here.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=receipts-backup-alert
