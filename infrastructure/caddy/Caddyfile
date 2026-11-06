@@ -1,0 +1,54 @@
+# Public entry point for Receipts.
+#
+# Serves the frontend AND the API on ONE hostname:
+#
+#   /api/*, /reviews/*, /health   ->  the Record Server
+#   everything else               ->  the static SPA, with history fallback
+#
+# One origin is deliberate. The frontend calls the API with relative paths
+# (`VITE_API_BASE_URL` empty), so there is no cross-origin request, no CORS
+# preflight, and nothing that has to know the public hostname at build time.
+# That last part matters for a Cloudflare Quick Tunnel, whose URL does not
+# exist until the tunnel starts -- a bundle baked with an absolute API URL
+# would have to be rebuilt every time the tunnel restarts.
+#
+# The site address comes from the environment so one file serves both cases:
+#
+#   production   CADDY_SITE_ADDRESS=api.receipts.<DOMAIN>
+#                Caddy obtains and renews a certificate over ACME. The
+#                Cloudflare record MUST be grey-clouded or the HTTP-01
+#                challenge cannot reach this host.
+#
+#   tunnel/local CADDY_SITE_ADDRESS=:80
+#                Plain HTTP. TLS is terminated by Cloudflare at the edge and
+#                the tunnel carries the request to this port, so Caddy must
+#                NOT try to issue a certificate for a name it cannot prove.
+#
+# Default is `:80` so an unset variable fails safe in development rather
+# than hammering Let's Encrypt from a laptop.
+
+{
+	# Where ACME problems are reported. Harmless when TLS is not in use.
+	email {$CADDY_ACME_EMAIL:admin@localhost}
+	# Structured logs to stdout, so `docker compose logs` is the one place
+	# to look and the json-file driver's rotation applies.
+	log {
+		output stdout
+		format json
+	}
+}
+
+{$CADDY_SITE_ADDRESS::80} {
+	encode gzip zstd
+
+	# Defence in depth: the application sets these too, but a response that
+	# never reaches the application -- a 502 while the API is restarting, or
+	# a static asset -- should carry them as well.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
