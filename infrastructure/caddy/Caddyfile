@@ -52,3 +52,39 @@
 		-Server
 	}
 
+	# --- API ---------------------------------------------------------------
+	#
+	# Matched first. These three prefixes are the whole server surface:
+	# /api/* (reviews, World ID, reputation), /reviews/* (published review
+	# text addressed by its hash) and /health.
+	@api path /api/* /reviews/* /health
+	handle @api {
+		# Demo configuration (2026-11-07): the upstream is the staging Record
+		# Server running from source on the HOST (port 8081) — the stack the
+		# end-to-end review flow was tested against (staging World ID, the
+		# gauntlet endpoint, staging Postgres holding the published review
+		# text). The containerised `api:8080` service remains running and can
+		# be restored by reverting this block to `reverse_proxy api:8080`.
+		reverse_proxy host.docker.internal:8081 {
+			# The API reads the LAST X-Forwarded-For hop for rate limiting,
+			# and only when TRUST_PROXY=true. Caddy appends the address it
+			# sees here, which is what makes that header trustworthy.
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	# --- frontend ----------------------------------------------------------
+	#
+	# Mounted read-only from web/dist. `try_files` is the SPA fallback: the
+	# app uses BrowserRouter, so /agents/11265 is not a file on disk and must
+	# be answered with index.html for the router to resolve it. Without this
+	# every deep link and every refresh 404s.
+	#
+	# Ordering matters: this is the LAST handler, so it can never shadow an
+	# API path.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
