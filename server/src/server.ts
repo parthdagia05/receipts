@@ -105,3 +105,82 @@ async function main(): Promise<void> {
     console.log('[server] database: sqlite');
   }
 
+  const app = createApp({
+    repo,
+    worldAppId: env.worldAppId,
+    worldRpId: env.worldRpId,
+    worldEnvironment: env.worldEnvironment,
+    chainId: env.chainId,
+    reviewGatewayAddress: env.reviewGatewayAddress,
+    reviewContentBaseUrl: env.reviewContentBaseUrl,
+    attestationSigner: createAttestationSignerFromEnv(env),
+    contractWalletReader: createPublicClientReader(
+      createPublicClient({ transport: http(env.rpcUrl) }),
+    ),
+    rpContextSigner: createRpContextSigner({
+      signingKeyHex: env.worldSigningKey,
+      rpId: env.worldRpId,
+    }),
+    worldIdVerifier: createWorldIdVerifier({ rpId: env.worldRpId }),
+    corsAllowedOrigins: env.corsAllowedOrigins,
+    walletReviewsEnabled: env.walletReviewsEnabled,
+    // Always on in the real server, unlike in tests. The limits are far
+    // above legitimate use; see DEFAULT_RATE_LIMITS.
+    rateLimit: { ...DEFAULT_RATE_LIMITS, trustProxy: env.trustProxy },
+    ...(env.receiptSettlerAddress === undefined ||
+    env.identityRegistryAddress === undefined ||
+    env.reputationRegistryAddress === undefined
+      ? {}
+      : {
+          reputation: {
+            client: createPublicClient({ transport: http(env.rpcUrl) }),
+            chainId: env.chainId,
+            contracts: {
+              reviewGateway: env.reviewGatewayAddress,
+              receiptSettler: env.receiptSettlerAddress,
+              identityRegistry: env.identityRegistryAddress,
+              reputationRegistry: env.reputationRegistryAddress,
+            },
+            gatewayDeployBlock: env.gatewayDeployBlock,
+            // Older gateways keep counting after a replacement. Spread
+            // conditionally so an empty list changes nothing.
+            ...(env.additionalGateways.length === 0
+              ? {}
+              : { additionalGateways: env.additionalGateways }),
+            confirmations: env.reputationConfirmations,
+          },
+        }),
+  });
+
+  const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
+    console.log(`[server] listening on port ${info.port}`);
+    console.log('[server] config:', redactEnv(env));
+  });
+
+  const shutdown = (signal: string): void => {
+    console.log(`[server] ${signal} received, shutting down`);
+    server.close(() => {
+      // Release connections before exiting. For PostgreSQL this drains the
+      // pool, so sockets are closed rather than left for the database to
+      // time out; for SQLite it closes the file handle. Either way the exit
+      // waits for it, so a shutdown cannot race the close.
+      void closeDatabase()
+        .catch((err: unknown) => {
+          console.error(
+            `[server] error closing the database: ${err instanceof Error ? err.name : 'unknown'}`,
+          );
+        })
+        .finally(() => {
+          process.exit(0);
+        });
+    });
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+main().catch((err: unknown) => {
+  console.error('[server] startup failed:', err instanceof Error ? err.name : 'unknown error');
+  process.exit(1);
+});
