@@ -1,0 +1,24 @@
+[Unit]
+Description=Nightly Receipts PostgreSQL backup
+Documentation=file:/opt/receipts/infrastructure/backup/README.md
+
+[Timer]
+# 03:00 UTC. The EBS snapshot policy runs at 03:30 UTC, after this has
+# finished, so a snapshot taken mid-dump is not the only copy of that night.
+OnCalendar=*-*-* 03:00:00 UTC
+
+# Run as soon as possible if the instance was off at 03:00. Without this a
+# stopped instance simply skips a night and nobody notices.
+Persistent=true
+
+# A few minutes of jitter. Not for load -- there is one instance -- but so
+# the upload does not land in the same second as every other cron-driven
+# S3 PUT in the region.
+RandomizedDelaySec=300
+
+# Guards against the clock jumping backwards (NTP step, instance resume)
+# re-triggering a run that already happened.
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
