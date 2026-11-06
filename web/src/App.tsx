@@ -29,3 +29,22 @@ function NotFound() {
   );
 }
 
+export function App() {
+  return (
+    <Routes>
+      <Route element={<AppLayout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="agents" element={<ExploreAgents />} />
+        <Route path="agents/:agentId" element={<AgentDetails />} />
+        <Route path="reviews" element={<Reviews />} />
+        <Route path="my-agents" element={<MyAgents />} />
+        <Route path="docs" element={<Documentation />} />
+        <Route path="demo" element={<AttackDemo />} />
+        <Route path="review/:agentId" element={<SubmitReview />} />
+        {/* Kept so an older bookmark still lands somewhere sensible. */}
+        <Route path="dashboard" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
+      </Route>
+    </Routes>
+  );
+}
