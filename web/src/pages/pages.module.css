@@ -1,0 +1,644 @@
+/* --- Page header ---------------------------------------------------------
+ * Compact by design. This is a console: the header names the view and offers
+ * its one primary action, then gets out of the way of the data.
+ */
+
+.pageHead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.pageTitle {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: -0.025em;
+}
+
+/* The trailing half of the title, set in muted grey so the view name reads
+   first and the category reads second, as one line rather than two. */
+.pageTitleMuted {
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+}
+
+.pageSubtitle {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 76ch;
+}
+
+.pageActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.backLink:hover {
+  color: var(--text-primary);
+}
+
+/* --- Dashboard grid ------------------------------------------------------
+ * Two columns: the working surface on the left, infrastructure facts on the
+ * right. The right column is narrow and fixed because its content is a spec
+ * sheet, not something that benefits from extra width.
+ */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.splitCol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.stackTight {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* --- Agent identity ------------------------------------------------------ */
+
+/*
+ * The agent tile. One neutral surface for every agent: a per-agent colour
+ * would be decoration that looks like data, and nothing about an agent id
+ * justifies one row being red and the next green.
+ */
+.swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.swatchLg {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+}
+
+.agentCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* Both are spans inside a span, so they need an explicit block to stack. */
+.agentCellId {
+  display: block;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.agentCellSub {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+  white-space: nowrap;
+}
+
+.rowAction {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- Agent card (used where a grid genuinely suits, e.g. My Agents) ------- */
+
+.agentGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 520px) {
+  .agentGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.agentCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.agentCard:hover {
+  border-color: var(--border-strong);
+}
+
+.agentRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.agentRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.agentRowLabel {
+  color: var(--text-muted);
+}
+
+.agentRowValue {
+  color: var(--text-secondary);
+}
+
+.agentCardFoot {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+/* --- Review list --------------------------------------------------------- */
+
+.reviewItem {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.reviewItem:last-child {
+  border-bottom: none;
+}
+
+.reviewBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.reviewTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.reviewText {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+  overflow-wrap: anywhere;
+}
+
+.reviewTextMissing {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.reviewFoot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+.scoreChip {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* --- Pagination ---------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.pagerLabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Review wizard ------------------------------------------------------- */
+
+.steps {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stepActive {
+  color: var(--accent);
+}
+
+.stepDone {
+  color: var(--text-secondary);
+}
+
+.stepNumber {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  border: 1px solid currentColor;
+  font-size: var(--text-2xs);
+  flex-shrink: 0;
+}
+
+.stepNumberFilled {
+  background: currentColor;
+}
+
+.stepBar {
+  flex: 1;
+  min-width: 12px;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.wizardBody {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.wizardFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.wizardHeading {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.wizardCopy {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-relaxed);
+  max-width: 76ch;
+}
+
+/* --- Rating input -------------------------------------------------------- */
+
+.ratingRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.ratingValue {
+  display: grid;
+  place-items: center;
+  min-width: 58px;
+  height: 42px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider {
+  flex: 1;
+  appearance: none;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  border: 3px solid var(--surface-base);
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 3px solid var(--surface-base);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* --- World ID QR --------------------------------------------------------- */
+
+.qrPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.qrFrame {
+  padding: var(--space-3);
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  line-height: 0;
+}
+
+.qrHint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 40ch;
+  line-height: var(--leading-relaxed);
+}
+
+/* --- Code / signing preview ---------------------------------------------- */
+
+.codeBlock {
+  padding: var(--space-4);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* --- Docs ---------------------------------------------------------------- */
+
+.prose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.prose h3 {
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.prose p {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+.prose p + p {
+  margin-top: var(--space-3);
+}
+
+.prose ol,
+.prose ul {
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+.prose code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+/* --- Responsive ---------------------------------------------------------- */
+
+@media (max-width: 1180px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Wizard column -------------------------------------------------------
+ * A form is read line by line, so it gets a measure rather than the full
+ * width of the console. Everything else on the page is tabular and benefits
+ * from the space; this does not.
+ */
+.narrow {
+  width: 100%;
+  max-width: 840px;
+}
+
+/* --- Chain status --------------------------------------------------------
+ * A wide card per chain: name and liveness in the header, then the handful of
+ * numbers worth watching in a flat grid. Receipts runs on one chain, so there
+ * is one of these, but the shape holds if that changes.
+ */
+
+.chainGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-5) var(--space-4);
+  padding: var(--space-5);
+}
+
+@media (max-width: 620px) {
+  .chainGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.chainLabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.chainValue {
+  margin-top: var(--space-1);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* --- Configuration rows --------------------------------------------------
+ * Icon, name, qualifier, badge. Used for the registries the app is wired to,
+ * where each entry is a fixed address rather than something to compare.
+ */
+
+.configRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.configRow:last-child {
+  border-bottom: none;
+}
+
+.configIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.configBody {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Name on the left, address on the right, qualifier underneath both. The
+   address never wraps: half an address on each of two lines is unreadable. */
+.configTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.configTop a {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.configName {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.configMeta {
+  margin-top: 1px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* --- Verification method choice ------------------------------------------ */
+
+.methodChoice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.methodOption {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  cursor: pointer;
+}
+
+.methodOption span {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.methodActive {
+  border-color: var(--accent);
+}
+
+@media (max-width: 520px) {
+  .methodChoice {
+    grid-template-columns: 1fr;
+  }
+}
