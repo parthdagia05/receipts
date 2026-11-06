@@ -308,3 +308,170 @@ export function Notice({
   );
 }
 
+/* --- Fields -------------------------------------------------------------- */
+
+export function Field({
+  label,
+  hint,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  htmlFor?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={styles.field}>
+      <label className={styles.label} htmlFor={htmlFor}>
+        {label}
+      </label>
+      {children}
+      {hint !== undefined && <div className={styles.hint}>{hint}</div>}
+    </div>
+  );
+}
+
+export function TextArea({ invalid = false, className, ...props }: TextAreaProps) {
+  return (
+    <textarea
+      className={[styles.textarea, invalid ? styles.inputError : '', className ?? ''].join(' ')}
+      {...props}
+    />
+  );
+}
+
+type TextAreaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & { readonly invalid?: boolean };
+
+/* --- Definition list ----------------------------------------------------- */
+
+export function DescriptionList({ children }: { children: ReactNode }) {
+  return <dl className={styles.dl}>{children}</dl>;
+}
+
+export function DescriptionRow({ term, children }: { term: ReactNode; children: ReactNode }) {
+  return (
+    <div className={styles.dlRow}>
+      <dt className={styles.dt}>{term}</dt>
+      <dd className={styles.dd}>{children}</dd>
+    </div>
+  );
+}
+
+/* --- Copyable ------------------------------------------------------------ */
+
+/**
+ * A value with a copy affordance.
+ *
+ * `navigator.clipboard` is unavailable on insecure origins, so a failed copy
+ * leaves the label unchanged rather than claiming success.
+ */
+export function Copyable({ value, display }: { value: string; display?: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* Clipboard unavailable; the value stays selectable by hand. */
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      className={styles.copy}
+      onClick={() => void copy()}
+      title={copied ? 'Copied' : `Copy ${value}`}
+    >
+      <span className="mono">{display ?? value}</span>
+      <span className={styles.copyIcon}>
+        {copied ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+      </span>
+    </button>
+  );
+}
+
+export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer noopener"
+      className={styles.copy}
+      style={{ gap: 'var(--space-1)' }}
+    >
+      {children}
+      <ExternalIcon size={12} className={styles.copyIcon} />
+    </a>
+  );
+}
+
+/* --- Skeleton ------------------------------------------------------------ */
+
+export function Skeleton({ height = 16, width = '100%' }: { height?: number; width?: string }) {
+  return <div className={styles.skeleton} style={{ height, width }} />;
+}
+
+/* --- Modal --------------------------------------------------------------- */
+
+/**
+ * A focus-trapping dialog.
+ *
+ * Escape closes it and the scrim is click-through-to-close, which are the two
+ * behaviours people try first. Rendered through a portal so a card's
+ * `overflow` cannot clip it.
+ */
+export function Modal({
+  open,
+  title,
+  onClose,
+  children,
+}: {
+  open: boolean;
+  title: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return createPortal(
+    <div
+      className={styles.scrim}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className={styles.modal} role="dialog" aria-modal="true">
+        <div className={styles.modalHeader}>
+          <div className={styles.cardTitle}>{title}</div>
+          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+            <CloseIcon size={16} />
+          </Button>
+        </div>
+        <div className={styles.modalBody}>{children}</div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
