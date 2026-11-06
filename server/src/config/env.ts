@@ -376,3 +376,213 @@ export function loadEnv(source: Source = process.env): Env {
           )
         : reviewContentBaseUrlNormalized;
 
+  // DATABASE_DRIVER — which backend to open.
+  //
+  // Defaults to sqlite for local development, but production is REQUIRED to
+  // say `postgres` explicitly. A deployment that forgets the variable must
+  // not quietly start on a file-backed database that every task would have
+  // its own private copy of; it must refuse to boot.
+  const driverRaw = read(source, 'DATABASE_DRIVER');
+  const databaseDriver: DatabaseDriver =
+    driverRaw === undefined
+      ? 'sqlite'
+      : DATABASE_DRIVERS.includes(driverRaw as DatabaseDriver)
+        ? (driverRaw as DatabaseDriver)
+        : ((fail('DATABASE_DRIVER', `must be one of: ${DATABASE_DRIVERS.join(', ')}`),
+          'sqlite') as DatabaseDriver);
+
+  const databaseUrl = read(source, 'DATABASE_URL');
+
+  if (databaseDriver === 'postgres' && databaseUrl === undefined) {
+    fail('DATABASE_URL', 'is required when DATABASE_DRIVER is postgres');
+  }
+  if (nodeEnv === 'production' && databaseDriver !== 'postgres') {
+    // The refusal is the point. SQLite cannot enforce
+    // UNIQUE (agent_id, nullifier) across processes, so a production server
+    // on SQLite would issue attestations the chain then rejects.
+    fail('DATABASE_DRIVER', 'must be "postgres" when NODE_ENV is production');
+  }
+
+  // DATABASE_PATH — optional, defaults to ./data/receipts.db.
+  const databasePath = read(source, 'DATABASE_PATH') ?? DEFAULT_DATABASE_PATH;
+
+  // Reputation engine addresses. Optional, but malformed is still an error:
+  // silently ignoring a typo would disable scoring without saying so.
+  const optionalAddress = (key: string): Address | undefined => {
+    const raw = read(source, key);
+    if (raw === undefined) return undefined;
+    if (!isAddress(raw, { strict: false })) {
+      fail(key, 'must be a 20-byte hex address');
+      return undefined;
+    }
+    return getAddress(raw);
+  };
+  const receiptSettlerAddress = optionalAddress('RECEIPT_SETTLER_ADDRESS');
+  const identityRegistryAddress = optionalAddress('IDENTITY_REGISTRY_ADDRESS');
+  const reputationRegistryAddress = optionalAddress('REPUTATION_REGISTRY_ADDRESS');
+
+  // CORS_ALLOWED_ORIGINS — optional, comma-separated. Each must be a bare
+  // origin: scheme and host, no path. A trailing path never matches an
+  // `Origin` header, so accepting one would silently never work.
+  const corsRaw = read(source, 'CORS_ALLOWED_ORIGINS');
+  const corsAllowedOrigins: string[] = [];
+  if (corsRaw !== undefined) {
+    for (const candidate of corsRaw.split(',').map((value) => value.trim())) {
+      if (candidate === '') continue;
+      if (candidate === '*') {
+        fail('CORS_ALLOWED_ORIGINS', 'must list explicit origins; "*" is not permitted');
+        continue;
+      }
+      let parsed: URL;
+      try {
+        parsed = new URL(candidate);
+      } catch {
+        fail('CORS_ALLOWED_ORIGINS', 'each entry must be an absolute http(s) origin');
+        continue;
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        fail('CORS_ALLOWED_ORIGINS', 'each entry must be an absolute http(s) origin');
+        continue;
+      }
+      if (parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '') {
+        fail('CORS_ALLOWED_ORIGINS', 'entries must be bare origins, with no path or query');
+        continue;
+      }
+      corsAllowedOrigins.push(parsed.origin);
+    }
+  }
+
+  // TRUST_PROXY — optional boolean, default false.
+  const trustProxyRaw = read(source, 'TRUST_PROXY');
+  const trustProxy =
+    trustProxyRaw === undefined
+      ? false
+      : trustProxyRaw === 'true'
+        ? true
+        : trustProxyRaw === 'false'
+          ? false
+          : (fail('TRUST_PROXY', 'must be "true" or "false"'), false);
+
+  // WALLET_REVIEWS_ENABLED — optional boolean, default false. Strict: anything
+  // but "true"/"false" is an error rather than being read as false, so a typo
+  // in "enabled" cannot leave an operator believing the feature is on.
+  const walletReviewsRaw = read(source, 'WALLET_REVIEWS_ENABLED');
+  const walletReviewsEnabled =
+    walletReviewsRaw === undefined
+      ? false
+      : walletReviewsRaw === 'true'
+        ? true
+        : walletReviewsRaw === 'false'
+          ? false
+          : (fail('WALLET_REVIEWS_ENABLED', 'must be "true" or "false"'), false);
+
+  // ADDITIONAL_REVIEW_GATEWAYS — optional, comma-separated `<address>@<block>`.
+  // Strict: a malformed entry is an error, because silently dropping a gateway
+  // would silently drop its reviews from every score. The block is required
+  // (no default of 0) so a misconfiguration cannot trigger a full-history scan.
+  const additionalGateways: AdditionalGateway[] = [];
+  const additionalRaw = read(source, 'ADDITIONAL_REVIEW_GATEWAYS');
+  if (additionalRaw !== undefined) {
+    for (const entry of additionalRaw.split(',').map((e) => e.trim())) {
+      if (entry === '') continue;
+      const [addr, block, ...extra] = entry.split('@');
+      if (
+        addr === undefined ||
+        block === undefined ||
+        extra.length > 0 ||
+        !isAddress(addr, { strict: false }) ||
+        getAddress(addr) === ZERO_ADDRESS ||
+        !/^\d+$/.test(block)
+      ) {
+        fail('ADDITIONAL_REVIEW_GATEWAYS', 'each entry must be "<address>@<deploy block>"');
+        continue;
+      }
+      additionalGateways.push({ address: getAddress(addr), fromBlock: BigInt(block) });
+    }
+  }
+
+  const deployBlockRaw = read(source, 'GATEWAY_DEPLOY_BLOCK');
+  const gatewayDeployBlock =
+    deployBlockRaw === undefined
+      ? 0n
+      : /^\d+$/.test(deployBlockRaw)
+        ? BigInt(deployBlockRaw)
+        : (fail('GATEWAY_DEPLOY_BLOCK', 'must be a non-negative integer'), 0n);
+
+  // REPUTATION_CONFIRMATIONS -- optional, defaults to 2.
+  //
+  // Zero reads at the head, which races a load-balanced RPC pool: the head
+  // comes from one node and the log query lands on another that is a block
+  // behind. Two blocks is enough to absorb that and still shows a review
+  // roughly half a minute after it is mined. With a dedicated RPC endpoint
+  // this can go back to 0 for maximum freshness.
+  const confirmationsRaw = read(source, 'REPUTATION_CONFIRMATIONS');
+  const reputationConfirmations =
+    confirmationsRaw === undefined
+      ? 2n
+      : /^\d+$/.test(confirmationsRaw)
+        ? BigInt(confirmationsRaw)
+        : (fail('REPUTATION_CONFIRMATIONS', 'must be a non-negative integer'), 2n);
+
+  if (issues.length > 0) throw new EnvValidationError(issues);
+
+  return {
+    port: port as number,
+    nodeEnv: nodeEnv as NodeEnv,
+    worldAppId: worldAppId as string,
+    worldRpId: worldRpId as string,
+    worldEnvironment: worldEnvironment as WorldEnvironment,
+    worldSigningKey: worldSigningKey as `0x${string}`,
+    recordServerPrivateKey: recordServerPrivateKey as `0x${string}`,
+    reviewGatewayAddress: reviewGatewayAddress as Address,
+    chainId: chainId as number,
+    rpcUrl: rpcUrl as string,
+    reviewContentBaseUrl: reviewContentBaseUrl as string,
+    databasePath,
+    receiptSettlerAddress,
+    identityRegistryAddress,
+    reputationRegistryAddress,
+    gatewayDeployBlock,
+    reputationConfirmations,
+    corsAllowedOrigins,
+    trustProxy,
+    walletReviewsEnabled,
+    additionalGateways,
+    databaseDriver,
+    databaseUrl,
+  };
+}
+
+/**
+ * A log-safe view of the configuration: secrets are replaced with a marker and
+ * every other value is included verbatim.
+ */
+export function redactEnv(env: Env): Record<string, unknown> {
+  return {
+    port: env.port,
+    nodeEnv: env.nodeEnv,
+    worldAppId: env.worldAppId,
+    worldRpId: env.worldRpId,
+    worldEnvironment: env.worldEnvironment,
+    worldSigningKey: '[redacted]',
+    recordServerPrivateKey: '[redacted]',
+    reviewGatewayAddress: env.reviewGatewayAddress,
+    chainId: env.chainId,
+    rpcUrl: '[redacted]',
+    reviewContentBaseUrl: env.reviewContentBaseUrl,
+    databasePath: env.databasePath,
+    receiptSettlerAddress: env.receiptSettlerAddress,
+    identityRegistryAddress: env.identityRegistryAddress,
+    reputationRegistryAddress: env.reputationRegistryAddress,
+    gatewayDeployBlock: env.gatewayDeployBlock.toString(10),
+    reputationConfirmations: env.reputationConfirmations.toString(10),
+    corsAllowedOrigins: env.corsAllowedOrigins,
+    trustProxy: env.trustProxy,
+    walletReviewsEnabled: env.walletReviewsEnabled,
+    additionalGateways: env.additionalGateways.map(
+      (g) => `${g.address}@${g.fromBlock.toString(10)}`,
+    ),
+    databaseDriver: env.databaseDriver,
+    databaseUrl: env.databaseUrl === undefined ? undefined : '[redacted]',
+  };
+}
