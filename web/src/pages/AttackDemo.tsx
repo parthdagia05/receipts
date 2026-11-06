@@ -266,3 +266,158 @@ export function AttackDemo() {
   const attackerShare = total === 0 ? 0 : Math.round((attackerCount / total) * 100);
   const majority = attackerCount * 2 >= total;
 
+  return (
+    <>
+      <div className={styles.pageHead}>
+        <div>
+          <h1 className={styles.pageTitle}>
+            Attack demo <span className={styles.pageTitleMuted}>· Simulated</span>
+          </h1>
+          <p className={styles.pageSubtitle}>
+            Why Receipts uses a weighted median instead of the registry average.
+          </p>
+        </div>
+        <Badge tone="warning" dot>
+          Synthetic data
+        </Badge>
+      </div>
+
+      <Notice tone="warning">
+        Nothing on this page is real and no attack is submitted to mainnet or any other chain. These
+        reviews exist only inside each request, no agent&rsquo;s reputation is affected, and no
+        chain state is read or written. The calculation is the same engine the live endpoint uses,
+        so what you see here is how the real scoring behaves. The one real-chain experiment is the
+        mainnet-fork AttackLab (<span className="mono">test/AttackLab.t.sol</span>), where six fresh
+        wallets dragged a live agent&rsquo;s registry mean from 50 to 77 — see{' '}
+        <Link to="/docs">Documentation</Link>.
+      </Notice>
+
+      <GauntletSection />
+
+      <Card>
+        <CardHeader
+          title="Explore one scenario"
+          description={`${honestCount} honest reviewers rating ${HONEST_VALUE}, ${attackerCount} attackers rating ${ATTACK_VALUE}`}
+        />
+        <div style={{ padding: 'var(--space-5)', display: 'grid', gap: 'var(--space-5)' }}>
+          <Field label={`Honest reviewers: ${honestCount}`}>
+            <input
+              type="range"
+              className={styles.slider}
+              min={1}
+              max={20}
+              value={honestCount}
+              onChange={(e) => setHonestCount(Number(e.target.value))}
+              aria-label="Honest reviewers"
+            />
+          </Field>
+          <Field
+            label={`Attackers: ${attackerCount}`}
+            hint={`${attackerShare}% of reviewers${majority ? ' — at or above half the weight, outside the guarantee' : ''}`}
+          >
+            <input
+              type="range"
+              className={styles.slider}
+              min={0}
+              max={20}
+              value={attackerCount}
+              onChange={(e) => setAttackerCount(Number(e.target.value))}
+              aria-label="Attackers"
+            />
+          </Field>
+        </div>
+      </Card>
+
+      {result.loading ? (
+        <StatGrid>
+          {[0, 1, 2].map((i) => (
+            <Card key={i} padded>
+              <Skeleton height={48} />
+            </Card>
+          ))}
+        </StatGrid>
+      ) : result.error !== null || result.data == null ? (
+        <Notice tone="danger">
+          The simulation endpoint did not answer. The Record Server must be running for this page.
+        </Notice>
+      ) : (
+        <>
+          <StatGrid>
+            <Stat
+              label="Receipts Reputation"
+              value={result.data.status === 'published' ? String(result.data.score) : null}
+              icon={<ShieldIcon size={15} />}
+              hint={
+                result.data.status === 'published'
+                  ? 'Weighted median — unmoved while attackers hold under half the weight'
+                  : `Needs ${result.data.threshold} verified humans; ${result.data.distinct_humans} here`
+              }
+            />
+            <Stat
+              label="ERC-8004 registry mean"
+              value={
+                result.data.unweighted_mean === null ? null : String(result.data.unweighted_mean)
+              }
+              hint="The plain average every attacker moves"
+            />
+            <Stat
+              label="Attacker weight share"
+              value={`${attackerShare}%`}
+              hint={
+                majority ? 'At or above 50%: no guarantee applies' : 'Below 50%: the bound holds'
+              }
+              status={
+                majority ? (
+                  <Badge tone="danger" dot>
+                    Outside bound
+                  </Badge>
+                ) : (
+                  <Badge tone="success" dot>
+                    Protected
+                  </Badge>
+                )
+              }
+            />
+          </StatGrid>
+
+          <Card>
+            <CardHeader title="What this shows" />
+            <DescriptionList>
+              <DescriptionRow term="Honest rating">{HONEST_VALUE}</DescriptionRow>
+              <DescriptionRow term="Attacker rating">{ATTACK_VALUE}</DescriptionRow>
+              <DescriptionRow term="Median moved by">
+                {result.data.status === 'published' && result.data.score !== null
+                  ? `${result.data.score - HONEST_VALUE} points`
+                  : 'no score published'}
+              </DescriptionRow>
+              <DescriptionRow term="Mean moved by">
+                {result.data.unweighted_mean === null
+                  ? '—'
+                  : `${result.data.unweighted_mean - HONEST_VALUE} points`}
+              </DescriptionRow>
+            </DescriptionList>
+          </Card>
+
+          <Notice tone="info">
+            In Receipts each of these reviewers would need a distinct World ID nullifier, which the
+            on-chain NullifierRegistry enforces as one per human per agent. The attack above costs
+            one address per vote against a mean, and one <em>human</em> per vote against this score.
+          </Notice>
+        </>
+      )}
+
+      <div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setHonestCount(5);
+            setAttackerCount(4);
+          }}
+        >
+          Reset scenario
+        </Button>
+      </div>
+    </>
+  );
+}
