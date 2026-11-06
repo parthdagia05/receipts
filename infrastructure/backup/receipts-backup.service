@@ -1,0 +1,51 @@
+[Unit]
+Description=Receipts PostgreSQL logical backup
+Documentation=file:/opt/receipts/infrastructure/backup/README.md
+# The backup talks to the Docker daemon; starting before it is up would fail
+# the preflight check for a reason that has nothing to do with the database.
+Requires=docker.service
+After=docker.service network-online.target
+
+# Fires when the unit exits nonzero. Until monitoring exists this only writes
+# a distinctive line to the journal; see receipts-backup-alert.service.
+OnFailure=receipts-backup-alert.service
+
+[Service]
+Type=oneshot
+
+# systemd will not start a second instance of a oneshot unit while one is
+# running, so the timer cannot stack jobs. The lock inside the script covers
+# the other case: someone running it by hand during the nightly window.
+ExecStart=/opt/receipts/backup.sh
+
+# Root, because it drives the Docker socket. The script never reads a
+# database credential, so this does not widen the blast radius beyond what
+# docker group membership already grants.
+User=root
+
+EnvironmentFile=-/opt/receipts/backup.env
+
+# A dump of a large database is slow but not unbounded; without this a hung
+# pg_dump would hold the lock until the next reboot.
+TimeoutStartSec=30min
+
+# Backups must never compete with request serving for CPU or disk.
+Nice=10
+IOSchedulingClass=idle
+
+# Hardening. Deliberately not ProtectSystem=strict or PrivateTmp: the unit
+# needs the Docker socket and writes to /opt/receipts/backups, and a sandbox
+# that breaks the backup is worse than no sandbox.
+NoNewPrivileges=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=receipts-backup
+
+[Install]
+WantedBy=multi-user.target
