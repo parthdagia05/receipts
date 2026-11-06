@@ -1,0 +1,245 @@
+# Production deployment. Backend to the EC2 instance over Systems Manager,
+# frontend to S3 + CloudFront.
+#
+# (The header used to say "Backend to ECS", left over from the superseded
+# Fargate design. The job below has always targeted EC2 via SSM.)
+#
+# Authentication is OIDC role assumption only. There are no long-lived AWS
+# keys in this repository or in GitHub secrets, which is the single most
+# valuable property of this workflow.
+#
+# NOT ENABLED. `workflow_dispatch` only, so merging this cannot deploy
+# anything. Remove the guard once the blocking items in
+# docs/deployment/security-checklist.md are closed.
+
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [staging, prod]
+
+permissions:
+  id-token: write   # required to request the OIDC token
+  contents: read
+
+# Two deploys at once would race on .env.prod and could leave IMAGE_TAG
+# naming one image while a different one is running -- which would make the
+# rollback target wrong. Queue instead, and never cancel a deploy midway.
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-southeast-2
+  ECR_REPOSITORY: receipts-api
+
+jobs:
+  # Deploying a red build is not a thing that should be possible.
+  verify:
+    name: Test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            web/package-lock.json
+
+      - name: Server
+        working-directory: server
+        run: |
+          npm ci
+          npm run typecheck
+          npm run fmt:check
+          npm test
+          npm run build
+
+      - name: Web
+        working-directory: web
+        run: |
+          npm ci
+          npm run typecheck
+          npm run fmt:check
+
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Contracts
+        run: forge fmt --check && forge test
+
+  backend:
+    name: Backend to EC2
+    needs: verify
+    runs-on: ubuntu-latest
+    # THE APPROVAL GATE. `environment:` makes this job wait for the
+    # protection rules configured on that GitHub environment, so a
+    # production deploy pauses for a required reviewer before any AWS
+    # credential is issued.
+    #
+    # It is also the AWS-side boundary: the OIDC trust policy only accepts
+    # the subject `repo:<owner>/<repo>:environment:<name>`, so a job without
+    # this key cannot assume the deploy role at all.
+    #
+    # The reviewers themselves are a repository setting, not a file in this
+    # repo. Until they are configured, this gate exists but does not stop
+    # anyone -- see infrastructure/deploy/README.md.
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Assume deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      # arm64, because the instance is a Graviton t4g. Idempotent: the
+      # repository has immutable tags, so re-running a deploy on the same
+      # commit must not fail at the push step.
+      - name: Build and push
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          chmod +x infrastructure/deploy/ecr-push.sh
+          ./infrastructure/deploy/ecr-push.sh \
+            "$REGISTRY" "$ECR_REPOSITORY" "${GITHUB_SHA::7}" server
+          echo "IMAGE_TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      # Deployed over Session Manager, so the instance needs no inbound SSH
+      # and CI needs no SSH key.
+      #
+      # The deploy logic lives in infrastructure/deploy/deploy.sh and is
+      # shipped here rather than embedded in user data (capped at 16KB) or
+      # inlined as a JSON array of shell strings (unreadable, untestable).
+      # It is unit-tested locally; see infrastructure/deploy/README.md.
+      - name: Deploy over SSM, with rollback
+        env:
+          INSTANCE_ID: ${{ vars.INSTANCE_ID }}
+          HEALTH_TIMEOUT: ${{ vars.HEALTH_TIMEOUT || '120' }}
+        run: |
+          set -euo pipefail
+
+          B64=$(base64 -w0 < infrastructure/deploy/deploy.sh 2>/dev/null \
+                || base64 < infrastructure/deploy/deploy.sh | tr -d '\n')
+
+          jq -n --arg b64 "$B64" --arg tag "$IMAGE_TAG" --arg to "$HEALTH_TIMEOUT" \
+                --arg id "$INSTANCE_ID" --arg sha "${GITHUB_SHA::7}" '{
+            InstanceIds: [$id],
+            DocumentName: "AWS-RunShellScript",
+            Comment: ("deploy " + $sha),
+            Parameters: {
+              commands: [
+                "set -euo pipefail",
+                ("printf %s " + ($b64 | @sh) + " | base64 -d > /opt/receipts/deploy.sh"),
+                "chmod 750 /opt/receipts/deploy.sh",
+                ("HEALTH_TIMEOUT=" + $to + " /opt/receipts/deploy.sh " + $tag)
+              ]
+            }
+          }' > /tmp/ssm.json
+
+          CMD_ID=$(aws ssm send-command --cli-input-json file:///tmp/ssm.json \
+                    --query Command.CommandId --output text)
+
+          aws ssm wait command-executed --command-id "$CMD_ID" \
+            --instance-id "$INSTANCE_ID" || true
+
+          INV=$(aws ssm get-command-invocation --command-id "$CMD_ID" \
+                 --instance-id "$INSTANCE_ID")
+          CODE=$(printf '%s' "$INV" | jq -r '.ResponseCode')
+
+          printf '%s' "$INV" | jq -r '.StandardOutputContent'
+          printf '%s' "$INV" | jq -r '.StandardErrorContent' >&2
+
+          # deploy.sh's three outcomes are distinct incidents and are
+          # reported as such. Collapsing 1 and 2 into "red" is how a
+          # service-down event gets mistaken for a routine failed deploy.
+          case "$CODE" in
+            0) echo "::notice::deployed ${GITHUB_SHA::7}" ;;
+            1) echo "::error::deploy of ${GITHUB_SHA::7} failed health checks; ROLLED BACK to the previous image, which is healthy"
+               exit 1 ;;
+            2) echo "::error::deploy of ${GITHUB_SHA::7} failed AND ROLLBACK FAILED -- the service is DOWN and needs a human now"
+               exit 1 ;;
+            *) echo "::error::deploy script did not run to completion (SSM ResponseCode=$CODE)"
+               exit 1 ;;
+          esac
+
+  frontend:
+    name: Frontend to S3
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # VITE_* values are inlined at build time, so the bundle is specific to
+      # this environment. There is no promoting a staging build to prod.
+      # None of these may be secret: they ship to every visitor.
+      - name: Build
+        working-directory: web
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_RPC_URL: ${{ vars.VITE_RPC_URL }}
+          VITE_CHAIN_ID: ${{ vars.VITE_CHAIN_ID }}
+          VITE_REVIEW_GATEWAY_ADDRESS: ${{ vars.VITE_REVIEW_GATEWAY_ADDRESS }}
+          VITE_RECEIPT_SETTLER_ADDRESS: ${{ vars.VITE_RECEIPT_SETTLER_ADDRESS }}
+          VITE_NULLIFIER_REGISTRY_ADDRESS: ${{ vars.VITE_NULLIFIER_REGISTRY_ADDRESS }}
+          VITE_IDENTITY_REGISTRY_ADDRESS: ${{ vars.VITE_IDENTITY_REGISTRY_ADDRESS }}
+          VITE_REPUTATION_REGISTRY_ADDRESS: ${{ vars.VITE_REPUTATION_REGISTRY_ADDRESS }}
+          VITE_GATEWAY_DEPLOY_BLOCK: ${{ vars.VITE_GATEWAY_DEPLOY_BLOCK }}
+          VITE_EXPLORER_URL: ${{ vars.VITE_EXPLORER_URL }}
+        run: |
+          npm ci
+          npm run build
+          # A secret reaching the bundle is a silent, permanent leak. Fail loudly.
+          if grep -rqE 'PRIVATE_KEY|SIGNING_KEY' dist/; then
+            echo "::error::a key-shaped string reached the frontend bundle"
+            exit 1
+          fi
+
+      - name: Assume deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Assets before index.html: reverse it and the new HTML briefly points
+      # at assets that are not uploaded yet.
+      - name: Upload
+        working-directory: web
+        run: |
+          aws s3 sync dist/ "s3://${{ vars.FRONTEND_BUCKET }}/" --delete \
+            --cache-control "public,max-age=31536000,immutable" --exclude index.html
+          aws s3 cp dist/index.html "s3://${{ vars.FRONTEND_BUCKET }}/index.html" \
+            --cache-control "no-cache"
+          # Archived per SHA so rollback does not require a rebuild.
+          aws s3 sync dist/ "s3://${{ vars.FRONTEND_BUCKET }}-backup/${GITHUB_SHA::7}/"
+
+      # Only index.html. Asset filenames are content-hashed and never stale.
+      - name: Invalidate
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/index.html"
