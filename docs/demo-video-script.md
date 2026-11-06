@@ -1,102 +1,93 @@
 # Receipts demo video script
 
-Target length: 3:20 to 3:30. Speak naturally, do not rush. Each section is one clip.
-What is on screen is in brackets. The doubt each line kills is in italics.
+Target length: about 3:40. Speak naturally, do not rush. Each section is one clip.
+What is on screen is in brackets. Slides are used only where marked, everything else is the live product.
 
-## Clip 1: Problem (0:00 to 0:20)
+## Flow rules (how the Clarity video stays fluent)
 
-[Screen: a product page full of suspicious 5-star reviews, then the ERC-8004 spec page]
+- Narrate what is on screen while it happens, never before or after.
+- One transition sentence between chapters: "Now let me show you how a review actually happens."
+- End every demo beat with its benefit in one line.
+- Keep sentences under 15 words.
 
-> In today's marketplace, we already know fake reviews cost buyers billions.
-> Now AI agents are getting paid for work, and Ethereum gave them an on-chain
-> reputation standard, ERC-8004. But that registry accepts feedback from any
-> address, and its score is a plain average.
+## Clip 1: Title (0:00 to 0:08) — SLIDE 1
 
-*Doubt killed: why should I care. The problem is current and on-chain today.*
+> Receipts. Reviews for AI agents that bots cannot outvote.
 
-## Clip 2: The attack (0:20 to 0:45)
+## Clip 2: Problem (0:08 to 0:28) — SLIDE 2
 
-[Screen: AttackLab test output, score going 50 to 77]
+> We already know fake reviews cost buyers billions. Now AI agents are
+> getting paid for work, and Ethereum gave them an on-chain reputation
+> standard, ERC-8004. But that registry accepts feedback from any address,
+> and its score is a plain average.
+
+## Clip 3: The attack (0:28 to 0:50) — LIVE TERMINAL, no slide
+
+[Screen: run the AttackLab fork test, output shows 50 going to 77]
 
 > So before building anything, we attacked it. On a fork of mainnet, six
 > freshly created wallets drag a real agent's reputation from fifty to
-> seventy seven. The only cost is gas. If agents are going to hire each
-> other based on these scores, this is a real problem.
+> seventy seven. The only cost is gas. If agents hire each other based on
+> these scores, that is a real problem.
 
-*Doubt killed: is the problem real, or marketing. We show it, not claim it.*
+## Clip 4: The three rules (0:50 to 1:10) — SLIDE 3
 
-## Clip 3: The fix, in one breath (0:45 to 1:05)
+> Receipts fixes the write path with three rules. A review only counts if
+> a verified human wrote it. If the reviewer actually paid the agent, the
+> review carries more weight. And the score is a weighted median, so a
+> minority of attackers can never push it past honest opinion.
 
-[Screen: Receipts landing page]
+## Clip 5: Live walkthrough (1:10 to 2:25) — LIVE APP
 
-> We built Receipts to fix the write path. A review only counts if a
-> verified human wrote it. One human, one review, per agent, enforced by
-> World ID. If the reviewer actually paid the agent, their review carries
-> more weight. And the score is a weighted median, not an average, so a
-> minority of attackers cannot push it past honest opinion.
+[Screen: the review wizard, done manually]
 
-*Doubt killed: what is it. Three rules, ten seconds each.*
-
-## Clip 4: Live walkthrough (1:05 to 2:20)
-
-[Screen: the review wizard, done live and manually]
-
-> Let me show you, live on Sepolia. I pick an agent and write a review.
-> Receipts asks me to prove I am human. This is a real World ID
-> verification, not a mock.
+> Now let me show you how a review actually happens, live on Sepolia.
+> I pick an agent and write a review. Receipts asks me to prove I am
+> human. This is a real World ID verification, not a mock.
 
 [Do the World ID flow on camera]
 
-> Behind the scenes, our server signs the request context, verifies the
-> proof, and stores the nullifier. My wallet signs the review, the server
-> attests it, and the review goes on-chain into the real ERC-8004 registry.
+> Behind the scenes, our server verifies the proof and stores the
+> nullifier. My wallet signs, the server attests, and the review goes
+> on-chain into the real ERC-8004 registry.
 
 [Show the transaction and the reputation page]
 
-> Here is the part that matters. If I cancel the World ID check, no review.
+> Here is the part that matters. If I cancel the verification, no review.
 
 [Cancel one attempt on camera]
 
-> And if I try to review this agent a second time, the nullifier is already
-> spent, so I am blocked. Any number of wallets, same human, still one review.
+> And if I try to review the same agent again, I am blocked. Any number
+> of wallets, same human, still one review.
 
-*Doubts killed: is it real, is World ID actually wired in, what stops repeat votes. The failure path is shown on camera, which the World prize requires.*
-
-## Clip 5: The gauntlet (2:20 to 2:50)
+## Clip 6: The gauntlet (2:25 to 2:50) — LIVE APP
 
 [Screen: Attack demo page, click the button, both panes fill]
 
-> But does the math actually hold? We run ten thousand randomized attacks,
-> live, through the same scoring engine production uses. Random honest
-> crowds against bot gangs. The registry average gets pushed past every
-> honest rating over nine thousand times. Look at the trials where
-> attackers hold less than half the weight: the average breaks three
-> thousand three hundred times. The weighted median breaks zero times.
-> That zero is a mathematical guarantee, and the seed is fixed, so anyone
-> can rerun this and get the same numbers.
+> But does the math hold? We run ten thousand randomized attacks through
+> the same engine production uses. In the trials where attackers held
+> less than half the weight, the registry average broke three thousand
+> three hundred times. The weighted median broke zero times. The seed is
+> fixed, so anyone can rerun this and get the same numbers.
 
-*Doubts killed: is the median actually better, is the demo cherry-picked.*
-
-## Clip 6: Open data (2:50 to 3:05)
+## Clip 7: Open record (2:50 to 3:05) — LIVE APP
 
 [Screen: the Arkiv panel on an agent page]
 
-> Every confirmed review and every score snapshot is also published to
-> Arkiv, a public queryable testnet. Anyone can read an agent's standing
-> with one query, without trusting our server.
+> Every confirmed review is also published to a public queryable network,
+> so anyone can read an agent's standing without trusting our server.
 
-*Doubt killed: is this a walled garden.*
+## Clip 8: Future and growth (3:05 to 3:25) — SLIDE 4
 
-## Clip 7: Close (3:05 to 3:25)
+> What is next: the paid review flow ships in the UI, then mainnet.
+> And this grows. Every agent marketplace will need a trust layer, and
+> Receipts plugs in with one gateway contract and one API. Every verified
+> review becomes public data anyone can build on.
 
-[Screen: leaderboard or architecture slide, max 4 bullets]
+## Clip 9: Close (3:25 to 3:40) — SLIDE 5
 
-> Existing projects read agent reputation and rank it. Receipts is the
-> first to fix where that reputation comes from: payment and personhood,
-> checked at write time. Next we ship the paid review flow in the UI and
-> go to mainnet. Trust needs a receipt. Thank you.
-
-*Doubt killed: how is this different, what happens after the hackathon.*
+> Existing projects read agent reputation and rank it. Receipts fixes
+> where it comes from. Trust needs a receipt. Thank you.
 
 ## Recording rules (ETHGlobal rejects videos that break these)
 
