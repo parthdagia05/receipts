@@ -1,0 +1,20 @@
+# Local build override for docker-compose.prod.yml.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.build.yml \
+#     --env-file .env.prod up -d --build
+#
+# The production file names an ECR image and has no build context, because
+# the instance has no source tree. This override adds the build back for
+# local work, so the same compose file is exercised locally and in
+# production rather than two files drifting apart.
+#
+# `image:` is inherited from the base file, so a local build is tagged with
+# the same ${ECR_REGISTRY}/receipts-api:${IMAGE_TAG} name the production
+# stack would pull. Set ECR_REGISTRY=local and IMAGE_TAG=dev in .env.prod
+# for local use; Docker will not try to pull an image that is already built.
+
+services:
+  api:
+    build:
+      context: ./server
+      dockerfile: Dockerfile

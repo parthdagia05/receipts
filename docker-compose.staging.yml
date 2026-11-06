@@ -1,0 +1,39 @@
+# Isolated staging database.
+#
+# A separate compose project (`name:` below), so its volume is
+# `receipts-staging_postgres-data` and cannot collide with production's
+# `receipts_postgres-data`. Nothing here touches the production stack: no
+# shared volume, no shared network, no shared port.
+#
+#   docker compose -f docker-compose.staging.yml up -d
+#
+# The API is not containerised here on purpose -- see STAGING.md. The
+# production image predates the World ID staging work, so a staging API has to
+# run from source anyway; building a second image would add minutes without
+# changing what is being tested.
+
+name: receipts-staging
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: receipts_staging
+      POSTGRES_USER: receipts_staging
+      # Staging-only, and never reused from production.
+      POSTGRES_PASSWORD: ${STAGING_POSTGRES_PASSWORD:?STAGING_POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Loopback only, and on 5433 so it cannot be confused with a local
+      # production Postgres on 5432.
+      - '127.0.0.1:5433:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U receipts_staging -d receipts_staging']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:

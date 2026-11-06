@@ -1,0 +1,194 @@
+# Production stack for the single-EC2 deployment.
+#
+# Two services on one host: the Record Server and its PostgreSQL. The database
+# is deliberately NOT published to the host — it is reachable only on the
+# compose network, so the only way in is through the API container.
+#
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+#
+# .env.prod holds the secrets and is never committed. See
+# docs/deployment/runbook.md for how it is populated on the instance.
+
+name: receipts
+
+services:
+  postgres:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-receipts}
+      POSTGRES_USER: ${POSTGRES_USER:-receipts}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      # Keeps the data directory one level down, so a bind mount or a volume
+      # with lost+found at its root does not make initdb refuse to start.
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Written by the backup cron on the host; see runbook.md.
+      - ./backups:/backups
+
+    # No `ports:`. The database is reachable only from the compose network.
+    # Publishing 5432 to the host would expose it to anything the instance's
+    # security group allows, which is a different and much larger surface.
+
+    healthcheck:
+      # `-U` and `-d` matter: without them pg_isready checks the wrong
+      # database and reports healthy while the application's is still
+      # initialising.
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-receipts} -d ${POSTGRES_DB:-receipts}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+  api:
+    # Fully qualified, and no `build:` section. The instance has no source
+    # tree, so a build context here is not a fallback -- it is a guaranteed
+    # failure that only shows up on the box. `receipts-api:<tag>` without a
+    # registry resolved to Docker Hub, which is worse: it would pull a
+    # stranger's image if one ever existed under that name.
+    #
+    # Both variables are required. There is deliberately no default: a
+    # default tag is how a deployment silently serves the wrong build.
+    # To build and run locally, add the override:
+    #   docker compose -f docker-compose.prod.yml -f docker-compose.build.yml ...
+    image: ${ECR_REGISTRY:?ECR_REGISTRY is required}/receipts-api:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        # Waits for the healthcheck, not merely for the container to exist.
+        # Without this the API starts first, fails to connect, and the
+        # restart policy masks a real configuration error as a slow start.
+        condition: service_healthy
+
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+
+      # Explicit, and required: `loadEnv` refuses to start a production
+      # process on any other driver, because SQLite cannot enforce
+      # UNIQUE (agent_id, nullifier) across processes. Omitting this does not
+      # fall back -- it fails to boot.
+      DATABASE_DRIVER: postgres
+
+      DATABASE_URL: postgres://${POSTGRES_USER:-receipts}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-receipts}
+
+      # Secrets. Required — compose fails fast rather than starting a server
+      # that would exit on the first request.
+      RECORD_SERVER_PRIVATE_KEY: ${RECORD_SERVER_PRIVATE_KEY:?required}
+      WORLD_SIGNING_KEY: ${WORLD_SIGNING_KEY:?required}
+      RPC_URL: ${RPC_URL:?required}
+
+      # Public configuration.
+      CHAIN_ID: ${CHAIN_ID:-11155111}
+      WORLD_APP_ID: ${WORLD_APP_ID:?required}
+      WORLD_RP_ID: ${WORLD_RP_ID:?required}
+      WORLD_ENVIRONMENT: ${WORLD_ENVIRONMENT:-production}
+      REVIEW_GATEWAY_ADDRESS: ${REVIEW_GATEWAY_ADDRESS:?required}
+      RECEIPT_SETTLER_ADDRESS: ${RECEIPT_SETTLER_ADDRESS:-}
+      IDENTITY_REGISTRY_ADDRESS: ${IDENTITY_REGISTRY_ADDRESS:-}
+      REPUTATION_REGISTRY_ADDRESS: ${REPUTATION_REGISTRY_ADDRESS:-}
+      GATEWAY_DEPLOY_BLOCK: ${GATEWAY_DEPLOY_BLOCK:-0}
+      REVIEW_CONTENT_BASE_URL: ${REVIEW_CONTENT_BASE_URL:?required}
+
+      # Production hardening. Both default to off in code, so they must be
+      # set explicitly here rather than inherited.
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?required in production}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+
+    ports:
+      # Bound to loopback only. Caddy on the host terminates TLS and proxies
+      # to this; nothing reaches the API from outside without passing through
+      # it. Publishing 0.0.0.0:8080 would make the API directly reachable and
+      # bypass TLS entirely.
+      - '127.0.0.1:8080:8080'
+
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+    # tini as PID 1. Node handles SIGTERM correctly on its own, but it does
+    # not reap orphaned children, and the health check below spawns a
+    # short-lived node process every 30 seconds.
+    init: true
+
+    # The server handles SIGTERM: it stops the listener, closes the pool and
+    # exits. 30s gives an in-flight request time to finish before SIGKILL.
+    stop_grace_period: 30s
+
+    logging: *logging
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+
+    depends_on:
+      api:
+        # `service_started`, NOT `service_healthy`. Caddy is the only thing
+        # listening on 80 and 443, and it is also the ACME client. Gating it
+        # on the API being healthy meant an application failure closed port
+        # 80, so the certificate could not be issued or renewed -- and could
+        # not be fixed by hand either, because the challenge had nowhere to
+        # land. TLS then failed for a reason that had nothing to do with TLS.
+        #
+        # Started-not-healthy costs a 502 from Caddy while the API is down,
+        # which is the correct thing to serve and is diagnosable from outside.
+        condition: service_started
+
+    # The only service published to the outside world. 80 is needed for the
+    # ACME HTTP-01 challenge as well as for the redirect to 443.
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+
+    environment:
+      # `:80` by default, so an unset variable serves plain HTTP locally
+      # rather than asking Let's Encrypt for a certificate from a laptop.
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:80}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:-admin@localhost}
+
+    volumes:
+      - ./infrastructure/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The built frontend, served by Caddy on the same origin as the API so
+      # the bundle can use relative paths and needs no CORS. Read-only: the
+      # web server has no reason to be able to modify what it serves.
+      #
+      # Harmless when absent -- the API prefixes are matched first, and only
+      # the SPA fallback would 404. In the AWS design CloudFront serves the
+      # frontend and this mount is simply unused.
+      - ./web/dist:/srv:ro
+      # Issued certificates and ACME account keys. Without this volume every
+      # restart re-issues, which hits Let's Encrypt rate limits fast.
+      - caddy-data:/data
+      - caddy-config:/config
+
+    logging: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+    # Named volume on the instance's EBS root, which survives container
+    # replacement and `docker compose down`. It does NOT survive instance
+    # termination -- durability comes from the snapshot schedule and the
+    # pg_dump cron, not from this.
+    driver: local
