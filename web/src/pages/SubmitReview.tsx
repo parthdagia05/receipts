@@ -746,3 +746,414 @@ function PostSubmitReputation({ agentId }: { agentId: bigint }) {
   );
 }
 
+function StepSubmit({
+  attestation,
+  txHash,
+  confirmed,
+  agentId,
+}: {
+  attestation: SerializedAttestation | null;
+  txHash: Hex | null;
+  confirmed: boolean;
+  agentId: bigint;
+}) {
+  if (confirmed && txHash !== null) {
+    return (
+      <>
+        <EmptyState
+          icon={<CheckIcon size={20} style={{ color: 'var(--status-ok)' }} />}
+          title="Review published on-chain"
+          body="Written to the ERC-8004 Reputation Registry. Any client can read it, not just Receipts."
+        />
+        <Card nested>
+          <DescriptionList>
+            <DescriptionRow term="Transaction">
+              <ExternalLink href={txUrl(txHash)}>{shortHash(txHash)}</ExternalLink>
+            </DescriptionRow>
+            <DescriptionRow term="Agent">
+              <Link to={`/agents/${agentId.toString(10)}`} style={{ color: 'var(--accent)' }}>
+                #{agentId.toString(10)}
+              </Link>
+            </DescriptionRow>
+            {attestation !== null && (
+              <DescriptionRow term="Evidence hash">
+                <Copyable
+                  value={attestation.feedbackHash}
+                  display={shortHash(attestation.feedbackHash)}
+                />
+              </DescriptionRow>
+            )}
+          </DescriptionList>
+        </Card>
+
+        <PostSubmitReputation agentId={agentId} />
+      </>
+    );
+  }
+
+  if (txHash !== null) {
+    return (
+      <>
+        <div>
+          <h2 style={{ fontSize: 'var(--text-md)' }}>Waiting for confirmation</h2>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 6 }}>
+            The transaction is in the mempool. Nothing is marked published until the receipt
+            confirms it succeeded.
+          </p>
+        </div>
+        <Card nested>
+          <DescriptionList>
+            <DescriptionRow term="Transaction">
+              <ExternalLink href={txUrl(txHash)}>{shortHash(txHash)}</ExternalLink>
+            </DescriptionRow>
+            <DescriptionRow term="Status">
+              <Badge tone="warning" dot>
+                Pending
+              </Badge>
+            </DescriptionRow>
+          </DescriptionList>
+        </Card>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div>
+        <h2 style={{ fontSize: 'var(--text-md)' }}>Submit to the gateway</h2>
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-muted)', marginTop: 6 }}>
+          The Record Server has signed your attestation. Submitting sends one transaction to the
+          ReviewGateway, which verifies the signature, spends your nullifier and writes the feedback
+          to ERC-8004.
+        </p>
+      </div>
+
+      {attestation !== null && (
+        <Card nested>
+          <DescriptionList>
+            <DescriptionRow term="Gateway">
+              <ExternalLink href={addressUrl(config.reviewGateway)}>
+                {shortAddress(config.reviewGateway)}
+              </ExternalLink>
+            </DescriptionRow>
+            <DescriptionRow term="Rating">{attestation.value} / 100</DescriptionRow>
+            <DescriptionRow term="Evidence">
+              <Copyable
+                value={attestation.feedbackURI}
+                display={shortHash(attestation.feedbackHash)}
+              />
+            </DescriptionRow>
+            <DescriptionRow term="Attestation expires">
+              {new Date(Number(attestation.expiry) * 1000).toLocaleTimeString()}
+            </DescriptionRow>
+          </DescriptionList>
+        </Card>
+      )}
+
+      <Notice tone="info">
+        You pay gas for this transaction. The attestation is already signed, so you can submit again
+        if you reject it, while it is still valid.
+      </Notice>
+    </>
+  );
+}
+
+/* --- Step 4 (wallet): authorised ------------------------------------------ */
+
+/**
+ * The end of the wallet path.
+ *
+ * The attestation is a signed authorisation, not a published review, and this
+ * screen says so. The gateway deployed on this network does not yet expose a
+ * wallet submission entry point, so nothing is sent on-chain from here.
+ */
+function StepAuthorised({
+  attestation,
+  agentId,
+}: {
+  attestation: SerializedAttestation | null;
+  agentId: bigint;
+}) {
+  return (
+    <>
+      <EmptyState
+        icon={<CheckIcon size={20} style={{ color: 'var(--status-ok)' }} />}
+        title="Wallet authorisation signed"
+        body="The Record Server attested to your signed review. It is not yet written on-chain."
+      />
+      <Card nested>
+        <DescriptionList>
+          <DescriptionRow term="Agent">
+            <Link to={`/agents/${agentId.toString(10)}`} style={{ color: 'var(--accent)' }}>
+              #{agentId.toString(10)}
+            </Link>
+          </DescriptionRow>
+          <DescriptionRow term="Verification">
+            <VerificationBadge verification="wallet_only" />
+          </DescriptionRow>
+          {attestation !== null && (
+            <>
+              <DescriptionRow term="Rating">{attestation.value} / 100</DescriptionRow>
+              <DescriptionRow term="Evidence hash">
+                <Copyable
+                  value={attestation.feedbackHash}
+                  display={shortHash(attestation.feedbackHash)}
+                />
+              </DescriptionRow>
+              <DescriptionRow term="Attestation expires">
+                {new Date(Number(attestation.expiry) * 1000).toLocaleTimeString()}
+              </DescriptionRow>
+            </>
+          )}
+        </DescriptionList>
+      </Card>
+      <Notice tone="warning">{WALLET_TOOLTIP}</Notice>
+    </>
+  );
+}
+
+/* --- Footer: the actions that move between steps ------------------------- */
+
+function WizardFooter(props: {
+  method: Method;
+  step: StepIndex;
+  blocked: string | null;
+  wallet: ReturnType<typeof useWallet>;
+  content: string;
+  proof: VerifiedProof | null;
+  challenge: ReviewPrepareResponse | null;
+  attestation: SerializedAttestation | null;
+  txHash: Hex | null;
+  confirmed: boolean;
+  agentId: bigint;
+  rating: number;
+  setStep: (step: StepIndex) => void;
+  setError: (message: string | null) => void;
+  setChallenge: (challenge: ReviewPrepareResponse) => void;
+  setAttestation: (attestation: SerializedAttestation) => void;
+  setTxHash: (hash: Hex) => void;
+  setConfirmed: (value: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const { wallet, step } = props;
+
+  const fail = (err: unknown) => {
+    props.setError(
+      isUserRejection(err) ? 'You rejected the request in your wallet.' : describeApiError(err),
+    );
+  };
+
+  /** Step 3 → 4: hash the content server-side and get typed data back. */
+  const doPrepare = async () => {
+    if (wallet.address === null) return;
+    if (props.method === 'world_id' && props.proof === null) return;
+    setBusy(true);
+    props.setError(null);
+    try {
+      if (props.method === 'wallet') {
+        // No reviewType, receiptId, nullifier or requestNonce: the server
+        // fixes the type and derives the nullifier from the address.
+        const walletChallenge = await prepareWalletReview({
+          agentId: props.agentId.toString(10),
+          reviewer: wallet.address,
+          value: props.rating,
+          valueDecimals: 0,
+          content: props.content,
+        });
+        if (
+          (walletChallenge.verification !== undefined &&
+            walletChallenge.verification !== 'wallet_only') ||
+          (walletChallenge.review_type !== undefined &&
+            walletChallenge.review_type !== REVIEW_TYPE.WALLET)
+        ) {
+          throw new Error('The server returned a challenge that is not a wallet-verified review.');
+        }
+        props.setChallenge(walletChallenge);
+        props.setStep(3);
+        return;
+      }
+      if (props.proof === null) return;
+      const challenge = await prepareReview({
+        agentId: props.agentId.toString(10),
+        reviewer: wallet.address,
+        value: props.rating,
+        valueDecimals: 0,
+        reviewType: REVIEW_TYPE.FREE,
+        content: props.content,
+        requestNonce: props.proof.requestNonce,
+      });
+      props.setChallenge(challenge);
+      props.setStep(3);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Step 4 → 5: wallet signature, then exchange it for an attestation. */
+  const doSign = async () => {
+    if (wallet.address === null || props.challenge === null) return;
+    setBusy(true);
+    props.setError(null);
+    try {
+      const typed = prepareTypedData(props.challenge.typed_data);
+      const client = createClient(wallet.address);
+
+      // The schema is only known at runtime — it comes from the server — so
+      // viem's compile-time typed-data generics cannot describe it. The cast is
+      // confined to this one call; `prepareTypedData` is what actually
+      // guarantees the shape, field by field, against the declared types.
+      const signature = await client.signTypedData({
+        account: wallet.address,
+        domain: typed.domain,
+        types: typed.types,
+        primaryType: typed.primaryType,
+        message: typed.message,
+      } as unknown as Parameters<typeof client.signTypedData>[0]);
+
+      const attested = await attestReview({
+        challengeId: props.challenge.challenge_id,
+        signature,
+      });
+      // Fail closed on the function the server names: an unknown value, or one
+      // that does not belong to this flow, is an error rather than a guess.
+      const expected = props.method === 'wallet' ? 'submitWalletReview' : 'submitFreeReview';
+      const named = parseSubmitFunction(attested.submit_function);
+      if (named !== expected) {
+        throw new Error(
+          `The server asked for ${named}, but this flow submits with ${expected}. Nothing was sent.`,
+        );
+      }
+      props.setAttestation(attested.attestation);
+      props.setStep(4);
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Step 5: one transaction, then wait for the receipt before claiming success. */
+  const doSubmit = async () => {
+    if (wallet.address === null || props.attestation === null) return;
+    setBusy(true);
+    props.setError(null);
+    try {
+      const client = createClient(wallet.address);
+      const hash = await client.writeContract({
+        account: wallet.address,
+        chain: null,
+        address: config.reviewGateway,
+        abi: reviewGatewayAbi,
+        functionName: 'submitFreeReview',
+        args: [toAttestationArgs(props.attestation)],
+      });
+      props.setTxHash(hash);
+
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      if (receipt.status === 'success') {
+        props.setConfirmed(true);
+      } else {
+        // A reverted transaction is still mined. Reporting it as published
+        // because a hash exists would be exactly the wrong answer.
+        props.setError('The transaction was mined but reverted. The review was not written.');
+      }
+    } catch (err) {
+      fail(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (props.confirmed || (props.method === 'wallet' && step === 4)) {
+    return (
+      <div className={styles.wizardFoot}>
+        <Link to="/reviews">
+          <Button variant="ghost">All reviews</Button>
+        </Link>
+        <Link to={`/agents/${props.agentId.toString(10)}`}>
+          <Button variant="primary">View the agent</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const contentBytes = new TextEncoder().encode(props.content).length;
+
+  return (
+    <div className={styles.wizardFoot}>
+      <Button
+        variant="ghost"
+        disabled={step === 0 || step === 4 || busy}
+        onClick={() =>
+          props.setStep(
+            (props.method === 'wallet' && step === 2 ? 0 : Math.max(0, step - 1)) as StepIndex,
+          )
+        }
+      >
+        Back
+      </Button>
+
+      {step === 0 &&
+        (props.blocked === 'wallet' ? (
+          <Button
+            variant="primary"
+            icon={<WalletIcon size={14} />}
+            loading={wallet.connecting}
+            disabled={!wallet.available}
+            onClick={() => void wallet.connect()}
+          >
+            {wallet.available ? 'Connect Wallet' : 'No wallet detected'}
+          </Button>
+        ) : props.blocked === 'chain' ? (
+          <Button
+            variant="primary"
+            icon={<AlertIcon size={14} />}
+            onClick={() => void wallet.switchChain()}
+          >
+            Switch to {config.chainName}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            icon={<ShieldIcon size={14} />}
+            disabled={props.blocked !== null}
+            onClick={() => props.setStep(props.method === 'wallet' ? 2 : 1)}
+          >
+            {props.method === 'wallet' ? 'Continue with wallet' : 'Verify with World ID'}
+          </Button>
+        ))}
+
+      {step === 1 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-muted)' }} />}
+
+      {step === 2 && (
+        <Button
+          variant="primary"
+          loading={busy}
+          disabled={props.content.trim().length === 0 || contentBytes > MAX_CONTENT_BYTES}
+          onClick={() => void doPrepare()}
+        >
+          Continue to signing
+        </Button>
+      )}
+
+      {step === 3 && (
+        <Button variant="primary" loading={busy} onClick={() => void doSign()}>
+          Sign review
+        </Button>
+      )}
+
+      {step === 4 && (
+        <Button
+          variant="primary"
+          loading={busy}
+          disabled={props.attestation === null || props.txHash !== null}
+          onClick={() => void doSubmit()}
+        >
+          {props.txHash === null ? 'Submit on-chain' : 'Waiting for confirmation…'}
+        </Button>
+      )}
+    </div>
+  );
+}
