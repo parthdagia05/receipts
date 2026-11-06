@@ -1,0 +1,120 @@
+/*
+ * Receipts design tokens.
+ *
+ * Every colour, radius, space and type step used anywhere in the app is
+ * defined here. Components reference tokens, never raw values, so the visual
+ * system stays consistent and can be retuned in one place.
+ *
+ * The product is dark-only by design: it is an infrastructure console, and a
+ * half-finished light theme would read as unpolished. `color-scheme` tells the
+ * browser to match its own form controls and scrollbars to that.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- Surfaces ---------------------------------------------------------
+   * Five steps from the page up. Hierarchy is carried by these and by the
+   * single border value, never by colour: a panel is distinguished from the
+   * page by being lighter, not by being tinted.
+   */
+  --surface-base: #0b0b0d; /* page background */
+  --surface-sidebar: #111114; /* navigation rail */
+  --surface-inset: #141417; /* strips that sit between page and card */
+  --surface-card: #19191d; /* every card and panel, without exception */
+  --surface-raised: #202024; /* inputs, hover, table headers, nested blocks */
+  --surface-overlay: rgba(6, 6, 8, 0.78); /* modal scrim */
+
+  /* --- Borders ----------------------------------------------------------- */
+  --border-subtle: #303035; /* the default hairline, used almost everywhere */
+  --border-strong: #3c3c43; /* hover and focus-adjacent only */
+
+  /* --- Text -------------------------------------------------------------- */
+  --text-primary: #f0eff2; /* headings, values, emphasis */
+  --text-secondary: #a5a3ab; /* body copy, descriptions */
+  --text-muted: #85838c; /* labels, timestamps, placeholders */
+
+  /* --- Accent -----------------------------------------------------------
+   * One accent, used in three places and nowhere else: the selected
+   * navigation item, focus rings, and the handful of controls the user
+   * actively drags or steps through. It is not a surface, not a button fill
+   * and not an icon colour. If lavender starts appearing elsewhere it has
+   * stopped signalling anything.
+   */
+  --accent: #a89bd8;
+  --accent-soft: rgba(168, 155, 216, 0.1);
+  --accent-border: rgba(168, 155, 216, 0.22);
+
+  /* --- Status -----------------------------------------------------------
+   * Carried by a 5px dot inside an otherwise neutral badge. There are no
+   * filled green or amber surfaces anywhere in the interface.
+   */
+  --status-ok: #5aa87a;
+  --status-warn: #b09352;
+  --status-bad: #b06a6a;
+
+  /* --- Typography -------------------------------------------------------
+   * One family throughout, including tables and buttons. The mono stack is
+   * used only for hashes, addresses and ids, where character alignment and
+   * unambiguous glyphs carry meaning.
+   */
+  --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'SFMono-Regular', 'JetBrains Mono', Menlo, monospace;
+
+  --text-2xs: 0.625rem; /* 10px — uppercase micro-labels and step numerals */
+  --text-xs: 0.6875rem; /* 11px — badges, table labels, hints */
+  --text-sm: 0.8125rem; /* 13px — secondary copy, nav, table cells */
+  --text-base: 0.875rem; /* 14px — body default */
+  --text-md: 0.9375rem; /* 15px — card titles */
+  --text-lg: 1.125rem; /* 18px — section headings */
+  --text-xl: 1.375rem; /* 22px — page titles */
+  --text-2xl: 1.75rem; /* 28px — stat values, the largest text in the app */
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-extrabold: 800;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+
+  /* --- Space ------------------------------------------------------------
+   * A 4px scale. Layout uses 16/20/24; anything finer is intra-component.
+   */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* --- Radius ----------------------------------------------------------- */
+  --radius-sm: 5px; /* badges, small inputs */
+  --radius-md: 8px; /* buttons, nav items, avatars */
+  --radius-lg: 12px; /* cards, panels */
+  --radius-full: 999px;
+
+  /* --- Elevation --------------------------------------------------------
+   * Used only by things that genuinely float: modals and menus.
+   */
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  /* --- Motion -----------------------------------------------------------
+   * Short and unobtrusive. Nothing animates on load; transitions exist only
+   * to soften state changes the user caused.
+   */
+  --transition-fast: 110ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 170ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* --- Layout ------------------------------------------------------------ */
+  --sidebar-width: 238px;
+  --sidebar-width-collapsed: 62px;
+  --topbar-height: 56px;
+  --content-max: 1480px;
+}
