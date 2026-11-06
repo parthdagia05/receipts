@@ -1,0 +1,615 @@
+/*
+ * Shared primitives: card, button, badge, stat, table, empty state, field.
+ *
+ * Kept in one stylesheet because they share the same tokens and are always
+ * imported together; splitting them would mean six files that must stay
+ * visually in step with each other.
+ */
+
+/* --- Card ---------------------------------------------------------------- */
+
+.card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.cardPad {
+  padding: var(--space-4) var(--space-5);
+}
+
+/* A card inside a card. Takes the next surface step up so it separates from
+   its parent, which a same-coloured block with a border does not. */
+.cardNested {
+  background: var(--surface-raised);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 52px;
+}
+
+.cardHeaderBare {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.cardTitle {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.cardDescription {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* --- Section heading ----------------------------------------------------- */
+
+.sectionTitle {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
+}
+
+.sectionSubtitle {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+/* --- Button -------------------------------------------------------------- */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.sizeSm {
+  height: 28px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.sizeMd {
+  height: 34px;
+  padding: 0 var(--space-4);
+}
+
+.sizeLg {
+  height: 38px;
+  padding: 0 var(--space-5);
+}
+
+/*
+ * Every button is neutral. Hierarchy comes from surface weight and border,
+ * which is enough to rank three levels, and it means no action in the app
+ * competes for attention on colour alone.
+ *
+ *   primary   raised surface, visible border   the action of this view
+ *   secondary transparent, subtle border       everything else
+ *   ghost     no chrome until hovered          inline and tertiary
+ */
+
+.variantPrimary {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.variantPrimary:hover:not(:disabled) {
+  background: #2a2a30;
+  border-color: #48484f;
+}
+
+/* Transparent, so it reads as secondary whether it sits on the page or on a
+   card. A filled version would match whichever surface it is on and vanish. */
+.variantSecondary {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.variantSecondary:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.variantGhost {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.variantGhost:hover:not(:disabled) {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* Neutral like the rest; only the label colour marks it as destructive. */
+.variantDanger {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--status-bad);
+}
+
+.variantDanger:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+}
+
+.buttonFull {
+  width: 100%;
+}
+
+/* --- Badge ---------------------------------------------------------------
+ * One appearance for every badge in the app: neutral surface, neutral text.
+ * Status is carried by the optional dot, which is the only place a status
+ * colour appears. A filled green badge would shout louder than the number it
+ * is annotating.
+ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.dotSuccess {
+  background: var(--status-ok);
+}
+
+.dotWarning {
+  background: var(--status-warn);
+}
+
+.dotDanger {
+  background: var(--status-bad);
+}
+
+.dotAccent {
+  background: var(--accent);
+}
+
+/* --- Stat ---------------------------------------------------------------- */
+
+.statGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 520px) {
+  .statGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * Icon, figure, label, then an optional status on the right. The icon sits in
+ * its own tile so the four cards line up on a common left edge regardless of
+ * how wide each number happens to be.
+ */
+.stat {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+}
+
+.statIcon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.statBody {
+  min-width: 0;
+  flex: 1;
+}
+
+.statValue {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-extrabold);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statValueMuted {
+  color: var(--text-muted);
+}
+
+.statLabel {
+  margin-top: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+/* The status badge lives in the body, under the label, rather than as a third
+   flex column. As a sibling it squeezed the body narrow enough that a figure
+   such as "11,292" ran underneath it. */
+.statStatus {
+  margin-top: var(--space-2);
+}
+
+.statHint {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+/* --- Table --------------------------------------------------------------- */
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+/*
+ * Opt-in floor for wide, multi-column tables. Below it, cells start wrapping
+ * addresses onto two lines, which is harder to read than scrolling, and
+ * `.tableWrap` supplies the scroll. Narrow two-column tables in a side panel
+ * must NOT take this, or their second column lands outside the card.
+ */
+.tableWide {
+  min-width: 680px;
+}
+
+.table th {
+  padding: var(--space-2) var(--space-5);
+  text-align: left;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  height: 32px;
+}
+
+.table td {
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.table tbody tr {
+  transition: background var(--transition-fast);
+}
+
+.table tbody tr:hover {
+  background: var(--surface-raised);
+}
+
+.tableNumeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Empty state --------------------------------------------------------- */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: var(--space-10) var(--space-6);
+  gap: var(--space-2);
+}
+
+.emptyCompact {
+  padding: var(--space-8) var(--space-6);
+}
+
+.emptyIcon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.emptyTitle {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.emptyBody {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  max-width: 46ch;
+  line-height: var(--leading-relaxed);
+}
+
+.emptyAction {
+  margin-top: var(--space-3);
+}
+
+/* --- Inline notice -------------------------------------------------------
+ * Same surface and border as every other block. Only the icon changes
+ * colour, which is enough to tell a caution from an aside without turning a
+ * paragraph of text into a coloured panel.
+ */
+
+.notice {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.noticeIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+
+.noticeWarning .noticeIcon {
+  color: var(--status-warn);
+}
+
+.noticeDanger .noticeIcon {
+  color: var(--status-bad);
+}
+
+.noticeSuccess .noticeIcon {
+  color: var(--status-ok);
+}
+
+/* --- Form fields --------------------------------------------------------- */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  line-height: var(--leading-normal);
+}
+
+.input,
+.textarea {
+  width: 100%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.input:hover,
+.textarea:hover {
+  border-color: var(--border-strong);
+}
+
+.input:focus,
+.textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.textarea {
+  min-height: 124px;
+  resize: vertical;
+  line-height: var(--leading-relaxed);
+  font-family: inherit;
+}
+
+.inputError {
+  border-color: var(--danger-border);
+}
+
+/* --- Skeleton ------------------------------------------------------------ */
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface-raised) 0%,
+    #2f2f38 50%,
+    var(--surface-raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* --- Copyable value ------------------------------------------------------ */
+
+.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.copy:hover {
+  color: var(--text-primary);
+}
+
+.copyIcon {
+  color: var(--text-muted);
+  transition: color var(--transition-fast);
+}
+
+.copy:hover .copyIcon {
+  color: var(--accent);
+}
+
+/* --- Definition list ----------------------------------------------------- */
+
+/*
+ * The right-hand info panels. Rows are separated by hairlines rather than by
+ * whitespace: it keeps the panels compact and reads as a spec sheet, which is
+ * what they are.
+ */
+.dl {
+  display: flex;
+  flex-direction: column;
+}
+
+.dlRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+  min-height: 42px;
+}
+
+.dlRow:last-child {
+  border-bottom: none;
+}
+
+.dt {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.dd {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* --- Modal --------------------------------------------------------------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: var(--surface-overlay);
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100vh - var(--space-8));
+  overflow-y: auto;
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modalBody {
+  padding: var(--space-5);
+}
