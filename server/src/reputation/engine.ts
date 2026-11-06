@@ -276,3 +276,165 @@ export function computeReputation(allReviews: readonly ReviewInput[]): Reputatio
   const reviews = allReviews.filter((r) => r.reviewType !== REVIEW_TYPE_WALLET);
   const wallet = summarizeWallet(allReviews.filter((r) => r.reviewType === REVIEW_TYPE_WALLET));
 
+  // --- 1. Resolve duplicates across EVERY candidate, before eligibility ---
+  //
+  // Order matters and is the opposite of the obvious one. Deduplicating after
+  // classification would let a human whose first review was revoked be
+  // represented by a later one: revoke, resubmit, and the nullifier votes
+  // again. The earliest entry for a nullifier is therefore the only one that
+  // can ever count, whether or not it survives classification.
+  //
+  // Nullifiers are normalised first. They arrive as hex from a log and a
+  // difference of case would split one human into two.
+  const ordered = [...reviews].sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
+    if (a.logIndex !== b.logIndex) return a.logIndex - b.logIndex;
+    // Total order even if two logs somehow share a position, so the result
+    // never depends on input order.
+    return a.feedbackIndex < b.feedbackIndex ? -1 : a.feedbackIndex > b.feedbackIndex ? 1 : 0;
+  });
+
+  const firstByNullifier = new Map<string, ReviewInput>();
+  const candidates: ReviewInput[] = [];
+  for (const review of ordered) {
+    const key = normalizeNullifier(review.nullifier);
+    if (firstByNullifier.has(key)) {
+      excluded.push({
+        nullifier: key,
+        feedbackIndex: review.feedbackIndex,
+        reason: 'duplicate_nullifier',
+      });
+      continue;
+    }
+    firstByNullifier.set(key, review);
+    candidates.push({ ...review, nullifier: key });
+  }
+
+  // --- 2. Classify what survived deduplication -----------------------------
+  const admitted: ReviewInput[] = [];
+  for (const review of candidates) {
+    const reason = classify(review);
+    if (reason !== null) {
+      excluded.push({ nullifier: review.nullifier, feedbackIndex: review.feedbackIndex, reason });
+    } else {
+      admitted.push(review);
+    }
+  }
+
+  const eligible: EligibleReview[] = admitted
+    .map((review) => ({
+      nullifier: review.nullifier,
+      value: review.value,
+      reviewType: review.reviewType,
+      weight: weightOf(review),
+      feedbackIndex: review.feedbackIndex,
+      ...(review.gateway === undefined ? {} : { gateway: review.gateway }),
+    }))
+    .sort((a, b) => {
+      if (a.value !== b.value) return a.value < b.value ? -1 : 1;
+      return a.nullifier < b.nullifier ? -1 : a.nullifier > b.nullifier ? 1 : 0;
+    });
+
+  let totalWeight = 0n;
+  for (const entry of eligible) totalWeight += entry.weight;
+
+  const humanVerifiedCount = eligible.filter((e) => e.reviewType === REVIEW_TYPE_FREE).length;
+  const receiptVerifiedCount = eligible.filter((e) => e.reviewType === REVIEW_TYPE_PAID).length;
+  const distinctHumans = eligible.length;
+
+  const human = scoreTier(eligible);
+  const receipt = scoreTier(eligible.filter((e) => e.reviewType === REVIEW_TYPE_PAID));
+
+  return {
+    score: human.score,
+    status: human.status,
+    eligible,
+    excluded,
+    distinctHumans,
+    totalWeight,
+    humanVerifiedCount,
+    receiptVerifiedCount,
+    threshold: MIN_DISTINCT_HUMANS,
+    tiers: { human, receipt, wallet },
+  };
+}
+
+/**
+ * Score one pool of eligible, already-deduplicated reviews.
+ *
+ * The same rule for every scored tier: no score below the distinct-human
+ * threshold, otherwise the lower weighted median. Used for `human` (types 0
+ * and 1) and `receipt` (type 1); it is never handed a wallet review.
+ */
+function scoreTier(pool: readonly EligibleReview[]): ScoredTier {
+  let totalWeight = 0n;
+  for (const entry of pool) totalWeight += entry.weight;
+  const base = { count: pool.length, threshold: MIN_DISTINCT_HUMANS, totalWeight } as const;
+
+  if (pool.length === 0) return { ...base, score: null, status: 'no_eligible_reviews' };
+  // Deliberately no score. Below the threshold a median is computable but
+  // not defensible: with four reviewers one of them holds a quarter of the
+  // weight, and the manipulation resistance the number claims is not there.
+  if (pool.length < MIN_DISTINCT_HUMANS) return { ...base, score: null, status: 'below_threshold' };
+  return { ...base, score: lowerWeightedMedian(pool), status: 'published' };
+}
+
+/**
+ * Count wallet-verified reviews for display.
+ *
+ * Informational only: no score, no weight, threshold 0. Deduplicated by
+ * nullifier (earliest wins) and held to the same rating/revocation hygiene as
+ * everything else, so the count is of real, live, well-formed reviews. The
+ * nullifier must be the wallet derivation of the recorded reviewer; one that
+ * is not, or one with no reviewer to check against, is excluded.
+ */
+function summarizeWallet(inputs: readonly ReviewInput[]): WalletTier {
+  const ordered = [...inputs].sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
+    if (a.logIndex !== b.logIndex) return a.logIndex - b.logIndex;
+    return a.feedbackIndex < b.feedbackIndex ? -1 : a.feedbackIndex > b.feedbackIndex ? 1 : 0;
+  });
+
+  const seen = new Set<string>();
+  const records: WalletRecord[] = [];
+  const excluded: ExcludedReview[] = [];
+
+  for (const review of ordered) {
+    const key = normalizeNullifier(review.nullifier);
+    const exclude = (reason: ExclusionReason): void => {
+      excluded.push({ nullifier: key, feedbackIndex: review.feedbackIndex, reason });
+    };
+    if (seen.has(key)) {
+      exclude('duplicate_nullifier');
+      continue;
+    }
+    seen.add(key);
+
+    if (review.revoked) exclude('revoked');
+    else if (review.valueDecimals !== REQUIRED_VALUE_DECIMALS) exclude('invalid_decimals');
+    else if (review.value < MIN_RATING || review.value > MAX_RATING) exclude('rating_out_of_range');
+    else if (reviewerProblem(review.reviewer) !== null) {
+      exclude(reviewerProblem(review.reviewer) as 'missing_reviewer' | 'invalid_reviewer');
+    } else if (!isWalletNullifier(key, review.reviewer)) {
+      exclude('invalid_wallet_nullifier');
+    } else {
+      records.push({
+        nullifier: key,
+        value: review.value,
+        feedbackIndex: review.feedbackIndex,
+        ...(review.gateway === undefined ? {} : { gateway: review.gateway }),
+      });
+    }
+  }
+
+  records.sort((a, b) => (a.nullifier < b.nullifier ? -1 : a.nullifier > b.nullifier ? 1 : 0));
+  return {
+    score: null,
+    status: 'informational',
+    count: records.length,
+    threshold: WALLET_TIER_THRESHOLD,
+    totalWeight: 0n,
+    records,
+    excluded,
+  };
+}
