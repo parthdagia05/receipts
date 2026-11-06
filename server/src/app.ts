@@ -121,3 +121,79 @@ export function createApp(deps: AppDeps): Hono {
     );
   }
 
+  app.route('/', healthRoute({ repo: deps.repo }));
+  app.route('/', reviewContentRoute({ repo: deps.repo }));
+  app.route(
+    '/',
+    worldIdRoute({
+      appId: deps.worldAppId,
+      environment: deps.worldEnvironment,
+      signer: deps.rpContextSigner,
+      repo: deps.repo,
+    }),
+  );
+  app.route(
+    '/',
+    reviewProofRoute({
+      repo: deps.repo,
+      rpId: deps.worldRpId,
+      environment: deps.worldEnvironment,
+      verifier: deps.worldIdVerifier,
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    }),
+  );
+  app.route(
+    '/',
+    reviewPrepareRoute({
+      repo: deps.repo,
+      chainId: deps.chainId,
+      reviewGatewayAddress: deps.reviewGatewayAddress,
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    }),
+  );
+  app.route(
+    '/',
+    walletReviewPrepareRoute({
+      repo: deps.repo,
+      chainId: deps.chainId,
+      reviewGatewayAddress: deps.reviewGatewayAddress,
+      enabled: deps.walletReviewsEnabled === true,
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    }),
+  );
+  app.route(
+    '/',
+    reviewAttestRoute({
+      walletReviewsEnabled: deps.walletReviewsEnabled === true,
+      repo: deps.repo,
+      chainId: deps.chainId,
+      reviewGatewayAddress: deps.reviewGatewayAddress,
+      reviewContentBaseUrl: deps.reviewContentBaseUrl,
+      attestationSigner: deps.attestationSigner,
+      ...(deps.contractWalletReader === undefined
+        ? {}
+        : { contractWalletReader: deps.contractWalletReader }),
+      ...(deps.now === undefined ? {} : { now: deps.now }),
+    }),
+  );
+
+  if (deps.reputation !== undefined) {
+    app.route('/', reputationRoute(deps.reputation));
+  }
+
+  // Always mounted: it needs no chain access. Its output is marked
+  // `simulated` and carries no evidence hash, and it shares nothing with the
+  // live scoring path except the engine itself.
+  app.route('/', reputationSimulateRoute());
+
+  app.notFound((c) => c.json({ error: 'not_found' }, 404));
+
+  // Error bodies are a fixed string: an exception message can carry a file path
+  // or a value read from the environment, neither of which belongs in a response.
+  app.onError((err, c) => {
+    console.error('[server] unhandled error:', err.name);
+    return c.json({ error: 'internal_error' }, 500);
+  });
+
+  return app;
+}
