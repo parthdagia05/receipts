@@ -1,0 +1,244 @@
+#!/usr/bin/env bash
+#
+# Instance bootstrap. Rendered by Terraform and handed to cloud-init.
+#
+# NO SECRET IS IN THIS FILE. User data is readable by anything on the
+# instance that can reach the metadata service, and it is visible in the
+# console and in `describe-instance-attribute`. The runtime secrets are
+# fetched at boot from Secrets Manager using the instance role, written to a
+# root-owned 0600 file, and never echoed.
+#
+# ORDERING IS DELIBERATE. Backups and monitoring are configured and enabled
+# BEFORE the application is started, and the application start is the only
+# step allowed to fail without aborting the script. The previous order --
+# start the app, then install the timer -- meant any startup problem left an
+# instance with no backups and no monitoring, reporting healthy to EC2. A
+# running application without backups is a worse state than a failed
+# application with them.
+
+set -Eeuo pipefail
+
+exec > >(tee -a /var/log/receipts-bootstrap.log) 2>&1
+echo "=== receipts bootstrap $(date -u +%FT%TZ) ==="
+
+APP_DIR=/opt/receipts
+SECRET_ID='${secret_id}'
+AWS_REGION='${aws_region}'
+IMAGE_TAG='${image_tag}'
+ECR_REGISTRY='${ecr_registry}'
+SITE_ADDRESS='${site_address}'
+ACME_EMAIL='${acme_email}'
+S3_BACKUP_BUCKET='${backup_bucket}'
+S3_BACKUP_PREFIX='${backup_prefix}'
+
+BOOTSTRAP_STATUS=/var/lib/receipts-bootstrap-status
+
+log()  { printf '%s [bootstrap] %s\n'       "$(date -u +%FT%TZ)" "$*"; }
+fail() { printf '%s [bootstrap] FAIL: %s\n' "$(date -u +%FT%TZ)" "$*" >&2; exit 1; }
+
+# --- 0. the tag must be a real one -----------------------------------------
+#
+# Terraform rejects "latest" and empty, but user data is also edited by hand
+# under pressure. ECR tags are immutable, so "latest" is never published and
+# pulling it fails with a message about the manifest, not about the tag.
+
+[ -n "$IMAGE_TAG" ]    || fail "IMAGE_TAG is empty"
+[ -n "$ECR_REGISTRY" ] || fail "ECR_REGISTRY is empty"
+case "$IMAGE_TAG" in
+  latest|local|main|master) fail "IMAGE_TAG='$IMAGE_TAG' is a moving tag; ECR tags are immutable and this will never resolve" ;;
+esac
+log "image: $ECR_REGISTRY/receipts-api:$IMAGE_TAG"
+
+# --- 1. packages -----------------------------------------------------------
+
+dnf -y update
+dnf -y install docker awscli-2 jq
+
+# The compose plugin is not in the AL2023 repositories. Pinned by version and
+# arch; `latest` would make a rebuild of this instance non-reproducible.
+install -d /usr/local/lib/docker/cli-plugins
+curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+  "https://github.com/docker/compose/releases/download/${compose_version}/docker-compose-linux-aarch64"
+chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
+systemctl enable --now docker
+docker compose version
+
+# --- 2. application files --------------------------------------------------
+
+install -d -m 0755 "$APP_DIR"
+install -d -m 0755 "$APP_DIR/infrastructure/caddy"
+install -d -m 0700 "$APP_DIR/backups"
+
+write_file() {   # write_file <path> <mode> <gzip+base64 payload>
+  local path="$1" mode="$2" payload="$3"
+  printf '%s' "$payload" | base64 -d | gunzip > "$path"
+  chmod "$mode" "$path"
+}
+
+write_file "$APP_DIR/docker-compose.prod.yml"            0644 '${compose_b64}'
+write_file "$APP_DIR/infrastructure/caddy/Caddyfile"     0644 '${caddyfile_b64}'
+write_file "$APP_DIR/backup.sh"                          0750 '${backup_sh_b64}'
+write_file "$APP_DIR/alert.sh"                           0750 '${alert_sh_b64}'
+write_file /etc/systemd/system/receipts-backup.service   0644 '${backup_service_b64}'
+write_file /etc/systemd/system/receipts-backup.timer     0644 '${backup_timer_b64}'
+write_file /etc/systemd/system/receipts-backup-alert.service 0644 '${backup_alert_b64}'
+
+# restore.sh and deploy.sh are deliberately NOT embedded. User data is capped
+# at 16KB; restore.sh runs during a recovery and deploy.sh is delivered by
+# the workflow over SSM, so neither is needed at boot.
+
+# --- 3. runtime secrets, validated -----------------------------------------
+#
+# `jq -e` with an explicit check per key. Plain `jq -r '"K=" + .K'` on a
+# missing key emits `K=` and exits 0, so a half-populated secret produced a
+# bootstrap that "succeeded" and an application that died at container start.
+# Failing here instead names the missing key.
+
+log "fetching runtime secrets"
+umask 077
+SECRET_JSON="$(aws secretsmanager get-secret-value \
+  --region "$AWS_REGION" --secret-id "$SECRET_ID" \
+  --query SecretString --output text)" || fail "could not read secret '$SECRET_ID'"
+
+for key in RECORD_SERVER_PRIVATE_KEY WORLD_SIGNING_KEY RPC_URL POSTGRES_PASSWORD; do
+  # -e sets a non-zero exit for null/false; the length test also rejects "".
+  # Only the KEY NAME is ever printed, never the value.
+  if ! printf '%s' "$SECRET_JSON" \
+       | jq -e --arg k "$key" 'has($k) and (.[$k] | type == "string") and (.[$k] | length > 0)' \
+       >/dev/null; then
+    unset SECRET_JSON
+    fail "secret '$SECRET_ID' is missing a non-empty string for key: $key"
+  fi
+done
+log "all four runtime secrets present"
+
+jq -r '
+  "RECORD_SERVER_PRIVATE_KEY=" + .RECORD_SERVER_PRIVATE_KEY,
+  "WORLD_SIGNING_KEY="         + .WORLD_SIGNING_KEY,
+  "RPC_URL="                   + .RPC_URL,
+  "POSTGRES_PASSWORD="         + .POSTGRES_PASSWORD
+' <<< "$SECRET_JSON" > "$APP_DIR/.env.prod"
+unset SECRET_JSON
+
+# Non-secret configuration appended in the clear.
+cat >> "$APP_DIR/.env.prod" <<EOF
+ECR_REGISTRY=$ECR_REGISTRY
+IMAGE_TAG=$IMAGE_TAG
+POSTGRES_DB=${postgres_db}
+POSTGRES_USER=${postgres_user}
+CHAIN_ID=${chain_id}
+REVIEW_GATEWAY_ADDRESS=${review_gateway_address}
+RECEIPT_SETTLER_ADDRESS=${receipt_settler_address}
+IDENTITY_REGISTRY_ADDRESS=${identity_registry_address}
+REPUTATION_REGISTRY_ADDRESS=${reputation_registry_address}
+GATEWAY_DEPLOY_BLOCK=${gateway_deploy_block}
+WORLD_APP_ID=${world_app_id}
+WORLD_RP_ID=${world_rp_id}
+WORLD_ENVIRONMENT=${world_environment}
+REVIEW_CONTENT_BASE_URL=${review_content_base_url}
+CORS_ALLOWED_ORIGINS=${cors_allowed_origins}
+TRUST_PROXY=true
+CADDY_SITE_ADDRESS=$SITE_ADDRESS
+CADDY_ACME_EMAIL=$ACME_EMAIL
+EOF
+chmod 600 "$APP_DIR/.env.prod"
+umask 022
+
+cat > "$APP_DIR/backup.env" <<EOF
+COMPOSE_FILE=$APP_DIR/docker-compose.prod.yml
+ENV_FILE=$APP_DIR/.env.prod
+PG_SERVICE=postgres
+POSTGRES_USER=${postgres_user}
+POSTGRES_DB=${postgres_db}
+BACKUP_DIR=$APP_DIR/backups
+S3_BUCKET=$S3_BACKUP_BUCKET
+S3_PREFIX=$S3_BACKUP_PREFIX
+RETENTION_DAYS=${backup_retention_days}
+RETENTION_MIN_KEEP=3
+EOF
+chmod 600 "$APP_DIR/backup.env"
+
+# --- 4. backups, BEFORE the application ------------------------------------
+
+systemctl daemon-reload
+systemctl enable --now receipts-backup.timer
+systemctl list-timers receipts-backup.timer --no-pager || true
+log "backup timer enabled"
+
+# --- 5. monitoring, BEFORE the application ---------------------------------
+#
+# The default EC2 metrics do not include memory or disk. Disk is the one that
+# matters here: PostgreSQL data, Docker images and backups share one volume,
+# and filling it corrupts the database rather than slowing it down.
+
+dnf -y install amazon-cloudwatch-agent
+cat > /opt/aws/amazon-cloudwatch-agent/etc/receipts.json <<'EOF'
+{
+  "agent": { "metrics_collection_interval": 300 },
+  "metrics": {
+    "namespace": "Receipts",
+    "append_dimensions": { "InstanceId": "$${aws:InstanceId}" },
+    "metrics_collected": {
+      "mem":  { "measurement": ["mem_used_percent"] },
+      "disk": { "measurement": ["used_percent"], "resources": ["/"] }
+    }
+  },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/receipts-bootstrap.log",
+            "log_group_name": "/receipts/bootstrap",
+            "retention_in_days": 30
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/receipts.json
+log "cloudwatch agent configured"
+
+# --- 6. application, LAST and non-fatal ------------------------------------
+#
+# From here a failure is recorded and reported, but does not abort: the
+# timer and the agent above are already running and must stay that way.
+# `set +e` for this block only.
+
+set +e
+app_ok=1
+
+if [ -n "$ECR_REGISTRY" ]; then
+  aws ecr get-login-password --region "$AWS_REGION" \
+    | docker login --username AWS --password-stdin "$ECR_REGISTRY" \
+    || { log "WARN: ECR login failed"; app_ok=0; }
+fi
+
+cd "$APP_DIR" || app_ok=0
+
+if [ "$app_ok" = 1 ]; then
+  docker compose -f docker-compose.prod.yml --env-file .env.prod up -d \
+    || { log "WARN: docker compose up failed"; app_ok=0; }
+fi
+set -e
+
+if [ "$app_ok" = 1 ]; then
+  echo "app=started" > "$BOOTSTRAP_STATUS"
+  log "application started"
+else
+  echo "app=failed" > "$BOOTSTRAP_STATUS"
+  # Loud, greppable, and shipped to CloudWatch by the agent configured above.
+  log "ERROR: the application did not start. Backups and monitoring ARE running."
+  log "ERROR: investigate with: docker compose -f $APP_DIR/docker-compose.prod.yml --env-file $APP_DIR/.env.prod logs"
+fi
+
+echo "=== bootstrap complete $(date -u +%FT%TZ) app=$(cat "$BOOTSTRAP_STATUS") ==="
+
+# Exit 0 even on application failure. cloud-init reporting the instance as
+# failed would not restart the application, and would hide the fact that the
+# parts that matter most -- backups, monitoring -- came up correctly.
+exit 0
