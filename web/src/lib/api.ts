@@ -311,3 +311,182 @@ export interface ReviewAttestResponse {
   readonly submitted: false;
 }
 
+/** Exchange the signed challenge for a Record Server attestation. */
+export function attestReview(input: {
+  challengeId: Hex;
+  signature: Hex;
+}): Promise<ReviewAttestResponse> {
+  return post<ReviewAttestResponse>('/api/reviews/attest', input);
+}
+
+/* --- Published review content -------------------------------------------- */
+
+/**
+ * Fetch the text a review's `feedbackHash` commits to.
+ *
+ * Returns null for anything the server does not hold, which is the normal
+ * answer for a review whose content was written by a different deployment.
+ */
+export async function fetchReviewContent(feedbackHash: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${config.apiBaseUrl}/reviews/${feedbackHash}`);
+    if (!response.ok) return null;
+    return await response.text();
+  } catch {
+    return null;
+  }
+}
+
+/* --- Receipts reputation -------------------------------------------------- */
+
+export interface ReputationEvidence {
+  readonly spec: string;
+  readonly agentId: string;
+  readonly chainId: number;
+  readonly snapshotBlock: string;
+  readonly contracts: Record<string, string>;
+  readonly status: string;
+  readonly score: string | null;
+  readonly threshold: number;
+  readonly distinctHumans: number;
+  readonly humanVerifiedCount: number;
+  readonly receiptVerifiedCount: number;
+  readonly totalWeight: string;
+  readonly eligible: readonly {
+    readonly nullifier: string;
+    readonly value: string;
+    readonly reviewType: number;
+    readonly weight: string;
+    readonly weightDecimal: string;
+    readonly feedbackIndex: string;
+  }[];
+  readonly excluded: readonly {
+    readonly nullifier: string;
+    readonly feedbackIndex: string;
+    readonly reason: string;
+  }[];
+  /** On-chain records the server could not attribute to a review. Hashed. */
+  readonly unattributable: readonly { readonly detail: string }[];
+}
+
+export interface ReputationResponse {
+  readonly agent_id: string;
+  readonly status: 'published' | 'below_threshold' | 'no_eligible_reviews';
+  /** The weighted median. Null until the distinct-human threshold is met. */
+  readonly score: number | null;
+  readonly threshold: number;
+  readonly distinct_humans: number;
+  readonly human_verified: number;
+  readonly receipt_verified: number;
+  readonly total_weight: string;
+  readonly snapshot_block: string;
+  readonly evidence_hash: Hex;
+  readonly evidence: ReputationEvidence;
+  readonly unattributable: readonly { readonly detail: string }[];
+  /**
+   * Per-assurance breakdown. Additive and optional: a server that predates it
+   * omits the field, and the top-level fields above stay authoritative.
+   * `unknown` because it is normalised by `readTiers` before use.
+   */
+  readonly tiers?: unknown;
+}
+
+/**
+ * The Receipts weighted-median score and the evidence behind it.
+ *
+ * Computed server-side from on-chain data, not from anything this client
+ * supplies. Distinct from the ERC-8004 registry mean, which is read directly
+ * from the chain elsewhere and is a different number with different
+ * properties.
+ */
+export function fetchReputation(agentId: string): Promise<ReputationResponse> {
+  return request<ReputationResponse>(`/api/agents/${agentId}/reputation`);
+}
+
+/* --- Simulation (demo only) ----------------------------------------------- */
+
+export interface SimulatedReputation {
+  /** Always true. Guards against this ever being read as a live score. */
+  readonly simulated: true;
+  readonly status: 'published' | 'below_threshold' | 'no_eligible_reviews';
+  readonly score: number | null;
+  /** The plain average, for comparison. What ERC-8004's getSummary returns. */
+  readonly unweighted_mean: number | null;
+  readonly threshold: number;
+  readonly distinct_humans: number;
+  readonly human_verified: number;
+  readonly receipt_verified: number;
+  readonly total_weight: string;
+  readonly eligible: readonly {
+    readonly value: number;
+    readonly reviewType: number;
+    readonly weight: string;
+  }[];
+  readonly excluded: readonly { readonly reason: string }[];
+}
+
+export interface SimulatedReviewInput {
+  readonly value: number;
+  readonly reviewType: number;
+  readonly paymentAmount?: string;
+  readonly revoked?: boolean;
+}
+
+/**
+ * Score invented reviews with the real engine.
+ *
+ * Separate endpoint, separate type, and the response is marked `simulated`.
+ * Nothing here touches chain state or the live reputation of any agent.
+ */
+export function simulateReputation(
+  reviews: readonly SimulatedReviewInput[],
+): Promise<SimulatedReputation> {
+  return post<SimulatedReputation>('/api/reputation/simulate', { reviews });
+}
+
+/** One scoring rule's tally across the gauntlet's trials. */
+export interface GauntletSide {
+  /** Attacked score moved >= success_threshold points (or was minted). */
+  readonly corrupted: number;
+  readonly protected: number;
+  /** Published nothing: under the five-distinct-human floor. Not a defense. */
+  readonly withheld: number;
+  readonly corrupted_below_half_weight: number;
+  /** Attacked score left the honest rating range entirely. */
+  readonly escaped: number;
+  readonly escaped_below_half_weight: number;
+}
+
+export interface GauntletResponse {
+  /** Always true. Nothing in the gauntlet touches a chain. */
+  readonly simulated: true;
+  readonly trials: number;
+  readonly seed: number;
+  readonly success_threshold: number;
+  /** Trials where attackers held under half the weight. */
+  readonly minority_trials: number;
+  readonly generator: {
+    readonly honest_min: number;
+    readonly honest_max: number;
+    readonly honest_rating_min: number;
+    readonly honest_rating_max: number;
+    readonly attackers_min: number;
+    readonly attackers_max: number;
+    readonly attack_ratings: readonly number[];
+  };
+  readonly mean: GauntletSide;
+  readonly median: GauntletSide;
+}
+
+/**
+ * Run the Monte Carlo attack gauntlet server-side.
+ *
+ * Every trial is scored by the production engine. Deterministic for a given
+ * seed, so a result shown in a demo can be reproduced by anyone.
+ */
+export function runAttackGauntlet(input?: {
+  trials?: number;
+  seed?: number;
+}): Promise<GauntletResponse> {
+  return post<GauntletResponse>('/api/reputation/simulate/gauntlet', input ?? {});
+}
