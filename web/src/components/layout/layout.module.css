@@ -1,0 +1,455 @@
+/* --- Shell --------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  min-height: 100vh;
+  transition: grid-template-columns var(--transition-base);
+}
+
+.shellCollapsed {
+  grid-template-columns: var(--sidebar-width-collapsed) 1fr;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  /* A grid item defaults to `min-width: auto`, so a wide child — an auto-fit
+     track row, a table — can push this column past the viewport and give the
+     whole page a horizontal scrollbar. Pinning it to 0 lets the content shrink
+     and its own grids collapse instead. */
+  min-width: 0;
+}
+
+.content {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-6) var(--space-10);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+/* --- Sidebar ------------------------------------------------------------- */
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  height: var(--topbar-height);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.navGroupLabel {
+  padding: 0 var(--space-3) var(--space-2);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+  white-space: nowrap;
+}
+
+/* Neutral at rest. The selected item is the only place in the rail that
+   takes the accent, which is what makes it read as selected. */
+.navIcon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.navItem:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* Charcoal highlight for the surface, accent for the icon only. */
+.navItemActive {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.navItemActive .navIcon {
+  color: var(--accent);
+}
+
+.navItemActive:hover {
+  background: var(--surface-raised);
+}
+
+.sidebarFooter {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.collapseButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.collapseButton:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* Collapsed: icons only, centred, labels removed from the layout entirely. */
+.collapsed .navItem,
+.collapsed .collapseButton {
+  justify-content: center;
+  padding: 0;
+}
+
+.collapsed .navLabel,
+.collapsed .navGroupLabel {
+  display: none;
+}
+
+.collapsed .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+/* --- Topbar -------------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--topbar-height);
+  padding: 0 var(--space-6);
+  background: rgba(6, 6, 10, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.menuButton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+.menuButton:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/*
+ * Centred rather than left-aligned: the top bar carries one input and a small
+ * cluster of controls, and anchoring the input to the middle keeps it from
+ * reading as part of the sidebar.
+ */
+.search {
+  position: relative;
+  flex: 1 1 0;
+  /* A flex item's default `min-width: auto` is the input's min-content width,
+     which is wide enough to stop the topbar shrinking and so sets a floor for
+     the whole page. The search box is the one thing here that should give way. */
+  min-width: 0;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.searchIcon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 0 var(--space-3) 0 34px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+}
+
+.searchInput::placeholder {
+  color: var(--text-muted);
+}
+
+.searchInput:hover {
+  border-color: var(--border-strong);
+}
+
+.searchInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.topbarRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/*
+ * The connect prompt. A strip rather than a toast because the condition is
+ * persistent, not an event: until a wallet is attached, half the app is
+ * read-only, and that is worth stating once at the top instead of discovering
+ * it on every disabled button.
+ */
+.connectStrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-6);
+  background: var(--surface-inset);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.connectStrip svg {
+  color: var(--text-muted);
+}
+
+.network {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.networkDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--success);
+}
+
+.networkDotWarn {
+  background: var(--warning);
+}
+
+/* --- Wallet menu --------------------------------------------------------- */
+
+.walletMenuWrap {
+  position: relative;
+}
+
+.walletTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-card);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.walletTrigger:hover {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+}
+
+.walletMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 232px;
+  padding: var(--space-2);
+  background: var(--surface-card);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.walletMenuHead {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-2);
+}
+
+.walletMenuLabel {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.walletMenuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.walletMenuItem:hover {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* --- Mobile -------------------------------------------------------------- */
+
+.scrim {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .shell,
+  .shellCollapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 40;
+    width: var(--sidebar-width);
+    transform: translateX(-100%);
+    transition: transform var(--transition-base);
+  }
+
+  .sidebarOpen {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* On mobile the rail is a drawer, so it is never the icon-only variant. */
+  .collapsed .navLabel,
+  .collapsed .navGroupLabel {
+    display: revert;
+  }
+
+  .collapsed .navItem,
+  .collapsed .collapseButton {
+    justify-content: flex-start;
+    padding: 0 var(--space-3);
+  }
+
+  .collapsed .brand {
+    justify-content: flex-start;
+    padding: 0 var(--space-4);
+  }
+
+  .sidebarFooter {
+    display: none;
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    background: var(--surface-overlay);
+  }
+
+  .menuButton {
+    display: flex;
+  }
+
+  .topbar {
+    padding: 0 var(--space-4);
+  }
+
+  .content {
+    padding: var(--space-5) var(--space-4) var(--space-8);
+  }
+}
+
+@media (max-width: 620px) {
+  .network span {
+    display: none;
+  }
+
+  .network {
+    padding: 0 var(--space-2);
+  }
+}
