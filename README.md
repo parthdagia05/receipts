@@ -7,7 +7,8 @@ ERC-8004 gives every AI agent an on-chain reputation, but anyone can write to it
 Built from scratch at **ETHGlobal Mumbai 2026**. Live on Ethereum Sepolia.
 
 > **Live demo:** the URL is in the ETHGlobal submission (the app runs behind a Cloudflare tunnel whose hostname changes on restart, see [RUNBOOK_QUICK_TUNNEL.md](RUNBOOK_QUICK_TUNNEL.md)).
-> **Demo video:** linked in the ETHGlobal submission. Script: [DEMO.md](DEMO.md).
+> **Demo video:** linked in the ETHGlobal submission.
+> **Partner tracks:** [World, Best Use of IDKit](#world-id-idkit-40) and [Arkiv, Build on Arkiv](#arkiv). Each section says exactly what we built for that track.
 
 ## The problem, shown with a real attack
 
@@ -64,7 +65,7 @@ Two things we keep clear: payment is not uniqueness (only World ID proves a pers
 ## What is live right now
 
 - **Contracts deployed and wired on Sepolia**, with **real reviews on-chain**. The full flow has been run end to end: live World ID 4.0 check (staging), wallet signature, server attestation, `giveFeedback` on the registry. The reputation engine reads those reviews back from Sepolia logs. Agents under the five-human floor correctly show "below threshold" instead of a score.
-- **The web app**: review wizard, per-agent reputation with evidence, and the live attack gauntlet.
+- **The web app**: review wizard, per-agent reputation with evidence, the live attack gauntlet, and a guided product tour for first-time visitors.
 - **The reputation API** with per-tier breakdowns and a reproducible evidence manifest for every score.
 
 ### Deployed contracts (Sepolia, chain `11155111`)
@@ -81,18 +82,21 @@ Deployment record: [`broadcast/Deploy.s.sol/11155111/`](broadcast/Deploy.s.sol/1
 
 ## Partner integrations
 
+Receipts is submitted to two partner tracks. World ID is the identity layer: it is what makes a review provably human and limits each person to one review per agent. Arkiv is the public record: it is where anyone can read reviews and scores without our server. Both are in the product's main path, not bolted on.
+
 ### World ID (IDKit 4.0)
 
-Personhood is the core of the project, and the integration is the current World ID 4.0, not the legacy one:
+**Built for the World track (Best Use of IDKit):** the full verification path, from backend-signed request to an on-chain spent nullifier. Personhood is the core of the project, and the integration is the current World ID 4.0, not the legacy one:
 
 - The Record Server signs `rp_context` on the backend for each request. The browser only relays it ([`server/src/worldid/`](server/src/worldid/)).
 - Credential preset `proofOfHuman`, with per-agent actions, so each agent has its own nullifier space: one proof, one review, per human, per agent.
 - Nullifier uniqueness is checked twice: `UNIQUE(nullifier, action)` in the database, and on-chain in `NullifierRegistry`.
 - The engine also rejects any human-labelled review whose nullifier looks wallet-derived, as extra protection.
+- Integration debrief for the World team (time to first success, friction, the one improvement): [docs/worldid-feedback.md](docs/worldid-feedback.md).
 
 ### Arkiv
 
-Receipts publishes its public record to [Arkiv](https://arkiv.network) (Rabdi testnet, chain `7794095`), so anyone can read an agent's standing without our server or an archive node:
+**Built for the Arkiv track (Build on Arkiv):** a publisher module with schemas, provenance labels and expiry, a browser reader, and real entities live on the Rabdi testnet. Receipts publishes its public record to [Arkiv](https://arkiv.network) (Rabdi testnet, chain `7794095`), so anyone can read an agent's standing without our server or an archive node:
 
 - **Entities:** `receipts.review/v1` (one per confirmed on-chain review) and `receipts.reputation/v1` (one per agent snapshot). Schema: [arkiv/schema.md](arkiv/schema.md).
 - **Writer:** `npm run arkiv:publish` ([`server/src/arkiv/`](server/src/arkiv/)). Dry run by default, and no World ID nullifiers or private data ever go to Arkiv.
@@ -129,22 +133,22 @@ The module, tests, CLI and reader were all built during the event.
 forge build && forge test --offline
 
 # server (SQLite in development, PostgreSQL in production)
-cd server && npm ci && cp .env.example .env   # fill in values, see DEMO.md
+cd server && npm ci && cp .env.example .env   # fill in values, the file documents each one
 npm run dev
 
 # web
 cd web && npm ci && npm run dev               # http://localhost:5173
 ```
 
-Full setup, environment variables, the Docker stack and the demo script: **[DEMO.md](DEMO.md)** and [docs/deployment/](docs/deployment/).
+Full setup, environment variables and the Docker stack: the `.env.example` files and [docs/deployment/](docs/deployment/).
 
 ## Tests
 
 | Suite | Result |
 |---|---|
-| Server (`npx vitest run`) | 39 files, **1,274 passed**, 0 failed |
+| Server (`npx vitest run`) | 40 files, **1,289 passed**, 0 failed |
 | Contracts (`forge test --offline`) | 14 suites, **279 passed**, 0 failed, 9 skipped (fork tests, need `RUN_FORK_TESTS=true` and an RPC) |
-| Web (`npm test`) | 5 files, **27 passed** |
+| Web (`npm test`) | 6 files, **66 passed** |
 | Types | `tsc --noEmit` clean on server and web, build clean |
 
 ## Security, in brief

@@ -23,10 +23,9 @@ Numbers so far: 4 entities written in 1 transaction, covering 2 agents (11292 an
 
 ## Will you keep building it after Mumbai?
 
-`<team to answer>`. The honest state of Receipts today:
+Yes, and the next steps are already scoped: ship the paid-review flow in the web UI (the contracts and server support it today, the UI does not yet) and move from Sepolia toward mainnet. The honest state of Receipts today:
 - It is a hackathon prototype.
 - The contracts are deployed on Sepolia, and the reputation API is live.
-- Two reviews have been written on-chain through the gateway, both test runs verified with the World ID Simulator (staging), not real credentials. Agents 11292 and 11294.
-- Live World ID verification has not been tested end to end (see the README status table).
+- The full review flow has run end to end: World ID check, wallet signature, server attestation, `giveFeedback` on the registry. Two reviews are on-chain through the gateway, for agents 11292 and 11294. Both were verified with staging World ID, which only accepts the Simulator, so they are test runs, not production credentials.
 
 The Arkiv part is built to keep running unattended: one idempotent command, safe to put on a schedule.

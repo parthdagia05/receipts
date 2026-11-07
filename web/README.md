@@ -28,9 +28,8 @@ not on port 3000.
 - **Same origin (recommended).** Serve `dist/` behind the same host as the
   Record Server, with `/api`, `/reviews` and `/health` routed to it. Leave
   `VITE_API_BASE_URL` empty.
-- **Separate origins.** Set `VITE_API_BASE_URL` to the server's URL. The Record
-  Server currently ships **no CORS middleware**, so it will need one before this
-  works from a browser.
+- **Separate origins.** Set `VITE_API_BASE_URL` to the server's URL, and list
+  the web app's origin in the server's `CORS_ALLOWED_ORIGINS`.
 
 Every `VITE_`-prefixed variable is inlined into the bundle and is public. Never
 put a private key, the World ID signing key, or an RPC URL carrying an API key

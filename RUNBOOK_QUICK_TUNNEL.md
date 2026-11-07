@@ -255,7 +255,7 @@ Decide quickly. In order:
 1. **Retry the cheap path (under 2 minutes).** Sections 1 and 2, then 4.1 if cloudflared is gone. If the API is the problem, section 5.
 2. **Demo from localhost.** Caddy serves the frontend and the API on the same origin at `http://localhost`, with no tunnel. Everything the browser needs works there, and CORS is not involved. `REVIEW_CONTENT_BASE_URL` still names the old tunnel host, so signed `feedbackURI`s would point at it. That does not affect what the UI displays, but **do not submit an on-chain review from a localhost demo with a stale base URL**, because the dead host would be written on-chain permanently.
 3. **Use the recorded demo video** (ETHGlobal asks for 2 to 4 minutes, 720p or better, and rejects videos outside that length). Record it **before** any risky change, from a moment when everything is healthy. This is the real safety net.
-4. **Show verifiable artefacts instead of the live site:** the passing test output (server 1230, web 24, Forge 279 passed and 9 skipped on the merged branch), the read-only on-chain checks from `DEMO.md` section 4, and the README. These need no tunnel.
+4. **Show verifiable artefacts instead of the live site:** the passing test output (server 1230, web 24, Forge 279 passed and 9 skipped on the merged branch), read-only `cast call` checks against the deployed gateway, and the README. These need no tunnel.
 5. **Another tunnel tool.** Not tested or documented here; do not choose this under pressure.
 
 Say plainly, on the demo, which parts are live and which are recorded. Do not present the live deployment as running the merged code: the API image is the pre-merge build (section 0).
