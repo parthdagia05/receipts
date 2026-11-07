@@ -2,6 +2,7 @@
   "name": "@receipts/record-server",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Off-chain Record Server for Receipts: World ID verification and EIP-712 review attestations.",
   "type": "module",
   "engines": {
