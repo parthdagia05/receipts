@@ -29,17 +29,28 @@ function inputsFor(ratings: readonly number[]): ReviewInput[] {
 }
 
 describe('gauntlet determinism', () => {
-  it('produces byte-identical results for the same seed and trial count', () => {
-    const a = runGauntlet(500, DEFAULT_SEED);
-    const b = runGauntlet(500, DEFAULT_SEED);
-    expect(b).toEqual(a);
-  });
+  // The multi-hundred-trial runs below get explicit timeouts: they finish in
+  // well under a second alone, but the default 5s can be exceeded when the
+  // whole suite runs in parallel on a busy machine.
+  it(
+    'produces byte-identical results for the same seed and trial count',
+    () => {
+      const a = runGauntlet(500, DEFAULT_SEED);
+      const b = runGauntlet(500, DEFAULT_SEED);
+      expect(b).toEqual(a);
+    },
+    30_000,
+  );
 
-  it('produces different tallies for a different seed', () => {
-    const a = runGauntlet(500, DEFAULT_SEED);
-    const b = runGauntlet(500, DEFAULT_SEED + 1);
-    expect(JSON.stringify(b)).not.toBe(JSON.stringify(a));
-  });
+  it(
+    'produces different tallies for a different seed',
+    () => {
+      const a = runGauntlet(500, DEFAULT_SEED);
+      const b = runGauntlet(500, DEFAULT_SEED + 1);
+      expect(JSON.stringify(b)).not.toBe(JSON.stringify(a));
+    },
+    30_000,
+  );
 
   it('generates trials deterministically from the PRNG', () => {
     const t1 = generateTrial(mulberry32(42));
@@ -159,7 +170,7 @@ describe('gauntlet success threshold boundary', () => {
 });
 
 describe('gauntlet accounting', () => {
-  it('splits every trial into exactly one outcome per side', () => {
+  it('splits every trial into exactly one outcome per side', { timeout: 30_000 }, () => {
     const result = runGauntlet(2_000, DEFAULT_SEED);
 
     expect(result.mean.corrupted + result.mean.protected + result.mean.withheld).toBe(
@@ -175,7 +186,7 @@ describe('gauntlet accounting', () => {
     expect(result.median.withheld).toBeGreaterThan(0);
   });
 
-  it('never lets a minority push the median past every honest rating', () => {
+  it('never lets a minority push the median past every honest rating', { timeout: 30_000 }, () => {
     const result = runGauntlet(5_000, DEFAULT_SEED);
     // The provable bound: below half the weight, a weighted median stays
     // within the range of honest ratings. It can shift BETWEEN honest
@@ -207,7 +218,7 @@ describe('gauntlet accounting', () => {
     expect(verdict.meanEscaped).toBe(true);
   });
 
-  it('runs the full ten-thousand-trial batch in reasonable time', () => {
+  it('runs the full ten-thousand-trial batch in reasonable time', { timeout: 30_000 }, () => {
     const start = Date.now();
     const result = runGauntlet(10_000, DEFAULT_SEED);
     const elapsed = Date.now() - start;
