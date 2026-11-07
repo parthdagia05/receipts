@@ -160,7 +160,12 @@ function GauntletSection() {
         description="10,000 randomized attack scenarios, each scored twice over the identical reviews: once with the registry's arithmetic mean, once with the Receipts weighted median. Scoring runs through the production engine, not a demo copy."
       />
       <div style={{ padding: 'var(--space-5)', display: 'grid', gap: 'var(--space-5)' }}>
-        <div style={{ display: 'grid', justifyItems: 'center', gap: 'var(--space-3)' }}>
+        {/* The tour highlights the launch control, never presses it: running
+            the 10,000 trials stays the user's choice. */}
+        <div
+          data-tour="attack-gauntlet"
+          style={{ display: 'grid', justifyItems: 'center', gap: 'var(--space-3)' }}
+        >
           <Button variant="primary" size="md" onClick={() => void run()} disabled={running}>
             {running
               ? 'Scoring 10,000 scenarios…'
@@ -282,19 +287,23 @@ export function AttackDemo() {
         </Badge>
       </div>
 
-      <Notice tone="warning">
-        Nothing on this page is real and no attack is submitted to mainnet or any other chain. These
-        reviews exist only inside each request, no agent&rsquo;s reputation is affected, and no
-        chain state is read or written. The calculation is the same engine the live endpoint uses,
-        so what you see here is how the real scoring behaves. The one real-chain experiment is the
-        mainnet-fork AttackLab (<span className="mono">test/AttackLab.t.sol</span>), where six fresh
-        wallets dragged a live agent&rsquo;s registry mean from 50 to 77 — see{' '}
-        <Link to="/docs">Documentation</Link>.
-      </Notice>
+      {/* Demo mode's clip-2 anchor: the in-app citation of the AttackLab
+          mainnet-fork experiment and its 50 → 77 result. */}
+      <div data-tour="attacklab-evidence">
+        <Notice tone="warning">
+          Nothing on this page is real and no attack is submitted to mainnet or any other chain.
+          These reviews exist only inside each request, no agent&rsquo;s reputation is affected, and
+          no chain state is read or written. The calculation is the same engine the live endpoint
+          uses, so what you see here is how the real scoring behaves. The one real-chain experiment
+          is the mainnet-fork AttackLab (<span className="mono">test/AttackLab.t.sol</span>), where
+          six fresh wallets dragged a live agent&rsquo;s registry mean from 50 to 77 — see{' '}
+          <Link to="/docs">Documentation</Link>.
+        </Notice>
+      </div>
 
       <GauntletSection />
 
-      <Card>
+      <Card tourId="scenario-explorer">
         <CardHeader
           title="Explore one scenario"
           description={`${honestCount} honest reviewers rating ${HONEST_VALUE}, ${attackerCount} attackers rating ${ATTACK_VALUE}`}

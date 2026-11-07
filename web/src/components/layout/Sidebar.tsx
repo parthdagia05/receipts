@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { useTour } from '../../tour/TourProvider';
 import { Logo, Wordmark } from '../Logo';
 import {
   AgentsIcon,
@@ -10,6 +11,7 @@ import {
   ExploreIcon,
   ReviewsIcon,
   ShieldIcon,
+  TourIcon,
 } from '../ui/Icons';
 import styles from './layout.module.css';
 
@@ -62,6 +64,8 @@ export function Sidebar({
   onToggleCollapsed: () => void;
   onNavigate: () => void;
 }) {
+  const { startTour } = useTour();
+
   return (
     <aside
       className={[
@@ -103,6 +107,18 @@ export function Sidebar({
         <button
           type="button"
           className={styles.collapseButton}
+          onClick={() => {
+            onNavigate();
+            startTour();
+          }}
+          title="Replay the product tour"
+        >
+          <TourIcon size={16} />
+          <span className={styles.navLabel}>Product tour</span>
+        </button>
+        <button
+          type="button"
+          className={[styles.collapseButton, styles.desktopOnly].join(' ')}
           onClick={onToggleCollapsed}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >

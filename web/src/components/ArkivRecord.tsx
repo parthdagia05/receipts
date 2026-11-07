@@ -72,7 +72,7 @@ export function ArkivRecord({
   );
 
   return (
-    <Card>
+    <Card tourId="arkiv-record">
       <CardHeader
         title="Public record on Arkiv"
         description="Read straight from the Arkiv testnet, not from our server"

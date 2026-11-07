@@ -48,7 +48,7 @@ export function ExploreAgents() {
 
   return (
     <>
-      <div className={styles.pageHead}>
+      <div className={styles.pageHead} data-tour="agent-directory">
         <div>
           <h1 className={styles.pageTitle}>
             Agents <span className={styles.pageTitleMuted}>· Directory</span>

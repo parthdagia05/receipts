@@ -20,6 +20,7 @@ export function Card({
   padded = false,
   nested = false,
   className,
+  tourId,
 }: {
   children: ReactNode;
   padded?: boolean;
@@ -28,9 +29,12 @@ export function Card({
   /* CSS-module lookups are `string | undefined` under this tsconfig, so the
      prop has to admit undefined rather than make every caller assert. */
   className?: string | undefined;
+  /** Marks this card as a product-tour anchor (`data-tour="…"`). */
+  tourId?: string | undefined;
 }) {
   return (
     <div
+      data-tour={tourId}
       className={[
         styles.card,
         padded ? styles.cardPad : '',

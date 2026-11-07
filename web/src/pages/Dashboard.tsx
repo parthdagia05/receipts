@@ -102,64 +102,69 @@ export function Dashboard() {
       </div>
 
       {/* Every value below is read from chain or from the server. Nothing is
-          hardcoded, and a failed read shows an em dash rather than a zero. */}
-      <StatGrid>
-        <Stat
-          label="Highest agent ID"
-          loading={highestId.loading}
-          value={
-            highestId.error !== null || highestId.data === null ? null : formatCount(highestId.data)
-          }
-          icon={<AgentsIcon size={15} />}
-          /* Not a count. IDs are minted sequentially, so this is an upper
+          hardcoded, and a failed read shows an em dash rather than a zero.
+          The wrapper is the product tour's "dashboard overview" anchor. */}
+      <div data-tour="dashboard-overview">
+        <StatGrid>
+          <Stat
+            label="Highest agent ID"
+            loading={highestId.loading}
+            value={
+              highestId.error !== null || highestId.data === null
+                ? null
+                : formatCount(highestId.data)
+            }
+            icon={<AgentsIcon size={15} />}
+            /* Not a count. IDs are minted sequentially, so this is an upper
              bound on how many agents exist; any burned token would make the
              true total lower, and the registry exposes no supply to check. */
-          hint="Highest ID minted; IDs are sequential, burns not subtracted"
-          status={
-            highestId.loading || highestId.error !== null ? undefined : (
-              <Badge tone="success" dot>
-                Live
-              </Badge>
-            )
-          }
-        />
-        <Stat
-          label="Reviews submitted"
-          loading={totals.loading}
-          value={
-            totals.error !== null || totals.data === null ? null : formatCount(totals.data.total)
-          }
-          icon={<ReviewsIcon size={15} />}
-          hint="ReviewSubmitted events on this gateway"
-        />
-        <Stat
-          label="Human-verified"
-          loading={totals.loading}
-          value={
-            totals.error !== null || totals.data === null ? null : formatCount(totals.data.free)
-          }
-          icon={<ShieldIcon size={15} />}
-          hint="World ID proof, no payment"
-        />
-        <Stat
-          label="Human-verified · Paid"
-          loading={totals.loading}
-          value={
-            totals.error !== null || totals.data === null ? null : formatCount(totals.data.paid)
-          }
-          icon={<WalletIcon size={15} />}
-          hint="World ID proof and a settled USDC receipt"
-        />
-        <Stat
-          label="Wallet-verified"
-          loading={totals.loading}
-          value={
-            totals.error !== null || totals.data === null ? null : formatCount(totals.data.wallet)
-          }
-          icon={<WalletIcon size={15} />}
-          hint="Wallet signature only. Not proof of one person, not scored"
-        />
-      </StatGrid>
+            hint="Highest ID minted; IDs are sequential, burns not subtracted"
+            status={
+              highestId.loading || highestId.error !== null ? undefined : (
+                <Badge tone="success" dot>
+                  Live
+                </Badge>
+              )
+            }
+          />
+          <Stat
+            label="Reviews submitted"
+            loading={totals.loading}
+            value={
+              totals.error !== null || totals.data === null ? null : formatCount(totals.data.total)
+            }
+            icon={<ReviewsIcon size={15} />}
+            hint="ReviewSubmitted events on this gateway"
+          />
+          <Stat
+            label="Human-verified"
+            loading={totals.loading}
+            value={
+              totals.error !== null || totals.data === null ? null : formatCount(totals.data.free)
+            }
+            icon={<ShieldIcon size={15} />}
+            hint="World ID proof, no payment"
+          />
+          <Stat
+            label="Human-verified · Paid"
+            loading={totals.loading}
+            value={
+              totals.error !== null || totals.data === null ? null : formatCount(totals.data.paid)
+            }
+            icon={<WalletIcon size={15} />}
+            hint="World ID proof and a settled USDC receipt"
+          />
+          <Stat
+            label="Wallet-verified"
+            loading={totals.loading}
+            value={
+              totals.error !== null || totals.data === null ? null : formatCount(totals.data.wallet)
+            }
+            icon={<WalletIcon size={15} />}
+            hint="Wallet signature only. Not proof of one person, not scored"
+          />
+        </StatGrid>
+      </div>
 
       <Card>
         <CardHeader

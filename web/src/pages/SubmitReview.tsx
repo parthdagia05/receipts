@@ -217,7 +217,7 @@ export function SubmitReview() {
         </div>
       </div>
 
-      <Card className={styles.narrow}>
+      <Card className={styles.narrow} tourId="review-wizard">
         <StepBar current={step} method={method} />
 
         <div className={styles.wizardBody}>

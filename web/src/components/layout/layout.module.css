@@ -419,7 +419,9 @@
     padding: 0 var(--space-4);
   }
 
-  .sidebarFooter {
+  /* In the drawer, collapsing makes no sense — but the tour and demo
+     launchers that share the footer must stay reachable. */
+  .desktopOnly {
     display: none;
   }
 

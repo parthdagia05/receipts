@@ -114,15 +114,17 @@ export function AgentDetails() {
       </div>
 
       {agent.loading ? (
-        <StatGrid>
-          {/* Four, matching the four real cards, so the grid does not reflow
-              when the data lands. */}
-          {[0, 1, 2, 3].map((index) => (
-            <Card key={index} padded>
-              <Skeleton height={48} />
-            </Card>
-          ))}
-        </StatGrid>
+        <div data-tour="agent-reputation">
+          <StatGrid>
+            {/* Four, matching the four real cards, so the grid does not reflow
+                when the data lands. */}
+            {[0, 1, 2, 3].map((index) => (
+              <Card key={index} padded>
+                <Skeleton height={48} />
+              </Card>
+            ))}
+          </StatGrid>
+        </div>
       ) : agent.error !== null ? (
         <Card>
           <EmptyState
@@ -158,79 +160,84 @@ export function AgentDetails() {
             </Notice>
           )}
 
-          <StatGrid>
-            <Stat
-              label="Receipts Reputation"
-              loading={reputation.loading}
-              value={
-                reputation.error !== null || reputation.data == null
-                  ? null
-                  : reputation.data.score === null
+          {/* The product tour's "reputation section" anchor: the Receipts
+              score, the registry mean it is deliberately not, and the
+              verified-review counts behind both. */}
+          <div data-tour="agent-reputation">
+            <StatGrid>
+              <Stat
+                label="Receipts Reputation"
+                loading={reputation.loading}
+                value={
+                  reputation.error !== null || reputation.data == null
                     ? null
-                    : String(reputation.data.score)
-              }
-              hint={
-                reputation.error !== null
-                  ? 'Score unavailable'
-                  : reputation.data?.status === 'published'
-                    ? `Weighted median of ${reputation.data.distinct_humans} verified humans`
-                    : reputation.data == null
-                      ? 'Loading'
-                      : `Needs ${reputation.data.threshold} verified humans; ${reputation.data.distinct_humans} so far`
-              }
-              status={
-                reputation.data?.status === 'published' ? (
-                  <Badge tone="success" dot>
-                    Published
-                  </Badge>
-                ) : undefined
-              }
-            />
-            <Stat
-              /* Deliberately not called a "Receipts score". This is the
+                    : reputation.data.score === null
+                      ? null
+                      : String(reputation.data.score)
+                }
+                hint={
+                  reputation.error !== null
+                    ? 'Score unavailable'
+                    : reputation.data?.status === 'published'
+                      ? `Weighted median of ${reputation.data.distinct_humans} verified humans`
+                      : reputation.data == null
+                        ? 'Loading'
+                        : `Needs ${reputation.data.threshold} verified humans; ${reputation.data.distinct_humans} so far`
+                }
+                status={
+                  reputation.data?.status === 'published' ? (
+                    <Badge tone="success" dot>
+                      Published
+                    </Badge>
+                  ) : undefined
+                }
+              />
+              <Stat
+                /* Deliberately not called a "Receipts score". This is the
                  registry's own unweighted mean, restricted to entries this
                  gateway authored. The weighted median that Receipts is meant
                  to publish is not implemented, and labelling a mean as that
                  score would claim manipulation-resistance the number does not
                  have — the AttackLab test exists precisely to show a mean
                  moving from 50 to 77 on six fake reviewers. */
-              label="Registry mean"
-              value={
-                agent.data.receiptsSummary === null || agent.data.receiptsSummary.count === 0
-                  ? null
-                  : formatFeedbackValue(
-                      agent.data.receiptsSummary.value,
-                      agent.data.receiptsSummary.valueDecimals,
-                    )
-              }
-              hint={
-                agent.data.receiptsSummary === null || agent.data.receiptsSummary.count === 0
-                  ? 'No Receipts reviews yet'
-                  : `ERC-8004 mean of ${agent.data.receiptsSummary.count} Receipts review(s)`
-              }
-            />
-            <Stat
-              label="All ERC-8004 feedback"
-              value={agent.data.summary === null ? null : String(agent.data.summary.count)}
-              hint="Every client, Receipts included"
-            />
-            <Stat
-              label="Verified reviews"
-              loading={reputation.loading}
-              value={
-                reputation.data == null
-                  ? null
-                  : String(reputation.data.human_verified + reputation.data.receipt_verified)
-              }
-              hint={
-                reputation.error !== null
-                  ? 'Unavailable'
-                  : reputation.data == null
-                    ? 'Loading'
-                    : `${reputation.data.human_verified} human-verified, ${reputation.data.receipt_verified} human-verified · paid`
-              }
-            />
-          </StatGrid>
+                label="Registry mean"
+                value={
+                  agent.data.receiptsSummary === null || agent.data.receiptsSummary.count === 0
+                    ? null
+                    : formatFeedbackValue(
+                        agent.data.receiptsSummary.value,
+                        agent.data.receiptsSummary.valueDecimals,
+                      )
+                }
+                hint={
+                  agent.data.receiptsSummary === null || agent.data.receiptsSummary.count === 0
+                    ? 'No Receipts reviews yet'
+                    : `ERC-8004 mean of ${agent.data.receiptsSummary.count} Receipts review(s)`
+                }
+              />
+              <Stat
+                label="All ERC-8004 feedback"
+                value={agent.data.summary === null ? null : String(agent.data.summary.count)}
+                hint="Every client, Receipts included"
+              />
+              <Stat
+                label="Verified reviews"
+                loading={reputation.loading}
+                value={
+                  reputation.data == null
+                    ? null
+                    : String(reputation.data.human_verified + reputation.data.receipt_verified)
+                }
+                hint={
+                  reputation.error !== null
+                    ? 'Unavailable'
+                    : reputation.data == null
+                      ? 'Loading'
+                      : `${reputation.data.human_verified} human-verified, ${reputation.data.receipt_verified} human-verified · paid`
+                }
+              />
+            </StatGrid>
+          </div>
 
           <div className={styles.split}>
             <div className={styles.splitCol}>

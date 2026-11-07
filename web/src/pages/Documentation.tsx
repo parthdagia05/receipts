@@ -34,7 +34,7 @@ export function Documentation() {
 
       <div className={styles.split}>
         <div className={styles.prose}>
-          <Card padded>
+          <Card padded tourId="docs-guarantees">
             <h3>What a Receipts review proves</h3>
             <p>
               An ordinary on-chain review proves only that someone paid gas. A Receipts review adds
@@ -106,7 +106,7 @@ export function Documentation() {
             </p>
           </Card>
 
-          <Card padded>
+          <Card padded tourId="docs-paid-reviews">
             <h3>Paid reviews</h3>
             <p>
               The protocol supports a second review type bound to a settled USDC payment:{' '}

@@ -1,0 +1,203 @@
+/*
+ * Receipts skin for the Driver.js tour.
+ *
+ * Every rule is scoped under `.receipts-tour` (the configured popoverClass) or
+ * a tour-specific class, so nothing leaks into the rest of the app. Values
+ * come from tokens.css only; the popover replicates the app's card surface
+ * and the footer buttons replicate the small primary/secondary button recipe
+ * from ui.module.css, so the tour is visually indistinguishable from a
+ * built-in Receipts panel.
+ */
+
+.driver-popover.receipts-tour {
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
+  min-width: 260px;
+  max-width: 340px;
+  font-family: var(--font-sans);
+}
+
+/* The connecting arrow carries the card surface. The popover's hairline
+   border cannot continue into a border-triangle, which matches how the app's
+   own menus meet their anchors. */
+.receipts-tour .driver-popover-arrow-side-left {
+  border-left-color: var(--surface-card);
+}
+.receipts-tour .driver-popover-arrow-side-right {
+  border-right-color: var(--surface-card);
+}
+.receipts-tour .driver-popover-arrow-side-top {
+  border-top-color: var(--surface-card);
+}
+.receipts-tour .driver-popover-arrow-side-bottom {
+  border-bottom-color: var(--surface-card);
+}
+
+/* Title and body follow the card-title / card-description hierarchy. */
+.receipts-tour .driver-popover-title {
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.01em;
+  line-height: var(--leading-tight);
+  color: var(--text-primary);
+  padding-right: var(--space-6);
+}
+
+.receipts-tour .driver-popover-description {
+  margin-top: var(--space-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+/* "Step 3 of 7", in the app's uppercase micro-label voice. */
+.receipts-tour .driver-popover-progress-text {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* The completion step carries three buttons; they wrap under the step count
+   rather than crushing it. */
+.receipts-tour .driver-popover-footer {
+  margin-top: var(--space-4);
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  flex-wrap: wrap;
+}
+
+.receipts-tour .driver-popover-navigation-btns {
+  gap: var(--space-2);
+}
+
+.receipts-tour .driver-popover-navigation-btns button + button {
+  margin-left: 0;
+}
+
+/* Footer buttons: the app's `sm` button recipe. Base = secondary variant.
+   Matches every footer button, including the ones the tour injects itself
+   (restart, skip clip). */
+.receipts-tour .driver-popover-footer button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: none;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    opacity var(--transition-fast);
+}
+
+.receipts-tour .driver-popover-footer button:hover,
+.receipts-tour .driver-popover-footer button:focus-visible {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* Next / Done is the view's one primary action. */
+.receipts-tour .driver-popover-footer button.driver-popover-next-btn {
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.receipts-tour .driver-popover-footer button.driver-popover-next-btn:hover,
+.receipts-tour .driver-popover-footer button.driver-popover-next-btn:focus-visible {
+  background: #2a2a30;
+  border-color: #48484f;
+}
+
+.receipts-tour .driver-popover-footer button:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.receipts-tour .driver-popover-footer .driver-popover-btn-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Skip control: the ghost-button close affordance from the app's modals. */
+.receipts-tour .driver-popover-close-btn {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.receipts-tour .driver-popover-close-btn:hover,
+.receipts-tour .driver-popover-close-btn:focus-visible {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+
+/* --- Welcome dialog body (rendered inside the app's own Modal) ------------ */
+
+.receipts-tour-welcome {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.receipts-tour-welcome p {
+  margin: 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+.receipts-tour-welcome-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* --- Small screens --------------------------------------------------------
+ * The popover must never pin itself under a thumb-width gutter; everything
+ * else already reflows because the targets are the app's own responsive
+ * elements.
+ */
+@media (max-width: 520px) {
+  .driver-popover.receipts-tour {
+    min-width: 0;
+    max-width: calc(100vw - 32px);
+  }
+}
